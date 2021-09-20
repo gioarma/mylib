@@ -94,10 +94,15 @@ def normalize_transients (tr, i_0_range, i_inf_range, info = False):
 def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None):
     '''
     tr: dataframe with transients at different temperatures
+
     t1: numpy array of values of t1, i.e. the first picts_2gates. VALUES IN SECONDS!
+
     beta: defined as t2/t1. t2 vcalues are obtained from this and t1
+
     t_avg: number of points to be averaged around t1 and t2. Not relevant if integrate=True. E.g. if t_avg=2, I average between i(t1) and the 2 points below and above, 5 in total. Same for i(t2).
     integrate: whether to perform double boxcar integration, i.e. calculating the integral of the current between t1 and t2 for each temperature (ref: Suppl. info of https://doi.org/10.1002/aenm.202003968 )
+
+    round_en: integer indicating how many decimals the rate windows should should be rounded to. If None, the default calculated values of en are kept.
 
     Returns a dataframe with PICTS spectra and t2 values
     '''
@@ -127,8 +132,9 @@ def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None):
     else:
         if round_en>0: picts.columns = en.round(round_en)
         elif (round_en==0): picts.columns = en.round(0).astype(int)
-        else :warnings.warn("Negative value of en! setting default values of 0,1,2,3,... as rate windows", stacklevel=2)
-
+        else :
+            warnings.warn("Negative value of en! setting default values of rate windows", stacklevel=2)
+            picts.columns = en
     picts.columns.name = 'Rate Window (Hz)'
 
     return picts, t2
@@ -194,10 +200,10 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel):
     m_eff_rel: relative effective mass i.e. the dimensionless quantity m_eff/m_e, where m_e is the electronic mass.
 
     Returns:
-    - a dataframe with arrhenius plot data,
-    - a dataframe with arrhenius plot fits
-    - a dataframe with the gaussian fits of the picts spectrum for each trap
-    - a dataframe with trap parameters (Ea,sigma)
+    1 a dataframe with arrhenius plot data,
+    2 a dataframe with arrhenius plot fits
+    3 a dataframe with the gaussian fits of the picts spectrum for each trap
+    4 a dataframe with trap parameters (Ea,sigma)
     '''
     # Gaussian peak fitting for finding Tm, temperature corresponding to peak max
     fits = {}
@@ -255,10 +261,11 @@ def plot_transients (tr, en_visualization = False, t1=None, t2 = None, cmap=None
 
     tr: Dataframe with time on index (default name 'Time (s)') and temperatures on columns (default name 'Temperature (K)')
     hvplot_opts: options to be passed to the hvplot() function. They can both overwrite the default options or add new ones
-    en_visualization:
-    t1:
-    t2:
-    cmap:
+    en_visualization: shows a the transients with overlayed the position of t1 and t2 gates. If True, also t1 and t2 must be specified
+    t1: t1 gates corresponding to the plotted spectrum (needed only if en_visualization==True)
+    t2: t2 gates corresponding to the plotted spectrum (needed only if en_visualization==True)
+    cmap: colormap for the spectrum
+    hvplot_opts: hvplot parameters to customize the spectrum plot.
     '''
     # Default options
     opts = dict(x='Time (s)', y=0, width=700, groupby = 'Temperature (K)',
