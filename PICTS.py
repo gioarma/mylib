@@ -43,7 +43,6 @@ def read_transients (path, amplifier_gain, dropna=False, set_timetrack = True, d
 
     # Current values
     df=df/amplifier_gain                # Convert to current
-    df.name = 'Current (A)'
 
     # Time values
     if set_timetrack:
@@ -91,6 +90,30 @@ def normalize_transients (tr, i_0_range, i_inf_range, info = False):
         return tr_norm
 
 
+def round_rate_window_values (df, en, round_value):
+    '''
+    df: input dataframe where columns are supposed to be en values
+
+    en: rate window values
+
+    round_value: decimal position en windows should be rounded to
+
+    Returns:
+    Dataframe with column values that are rate windows which have been rounded to the desired value.
+    '''
+    if round_value is None:
+        df.columns = en
+    else:
+        if round_value>0: df.columns = en.round(round_value)
+        elif (round_value==0): df.columns = en.round(0).astype(int)
+        else :
+            warnings.warn("Negative value of round_en! setting default values of rate windows", stacklevel=2)
+            df.columns = en
+
+    return df
+
+
+
 def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None):
     '''
     tr: dataframe with transients at different temperatures
@@ -127,18 +150,64 @@ def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None):
     else:
         picts = pd.concat([tr.iloc[t1-t_avg:t1+t_avg].mean() - tr.iloc[t2-t_avg:t2+t_avg].mean() \
                            for t1,t2 in zip(t1_loc,t2_loc)], axis=1)
-    if round_en is None:
-        picts.columns = en
-    else:
-        if round_en>0: picts.columns = en.round(round_en)
-        elif (round_en==0): picts.columns = en.round(0).astype(int)
-        else :
-            warnings.warn("Negative value of en! setting default values of rate windows", stacklevel=2)
-            picts.columns = en
+    picts = round_rate_window_values(picts, en, round_en)
     picts.columns.name = 'Rate Window (Hz)'
 
     return picts, t2
 
+
+
+def picts_4gates (tr, t1, t4, alpha, beta, t_avg, integrate = False, round_en = None):
+    '''
+    tr: dataframe with transients at different temperatures
+    t1: numpy array of values of t0, i.e. the first gates. VALUES IN SECONDS!
+    t4: numpy array of values of t3, i.e. the last gates. Remember, the best is t4>9*t1
+    alpha: defined as t2/t1. t2 values are obtained from this and t0
+    beta: defined as t3/t1. t3 values are obtained from this and t0
+    t_avg: number of points tobe averaged around the gates. Not relevant if integrate=True. E.g. if t_avg=2, I average between i(t0) and the 2 points below and above, 5 in total. Same for i(t1), i(t2), i(t3).
+    integrate: whether to perform 4 gate integration, i.e. calculating the integral of the current between t2 and t3 divided by the same integral between t1 and t4 for each temperature (ref: Suppl. info of https://doi.org/10.1002/aenm.202003968 )
+    round_en: integer indicating how many decimals the rate windows should should be rounded to. If None, the default calculated values of en are kept.
+
+    Returns:
+    1. a dataframe with PICTS spectra
+    2. a set of t1, t2, and t3 values
+    '''
+    # Initial checks
+    if (type(t1)!=np.ndarray):
+        raise TypeError('t1 must be numpy.ndarray object')
+    if (t4<10*t1).any():
+        warnings.warn('Some or all t4 values are less than 10*t1, which is an essential condition for performing 4gates PICTS. Please, change them accordingly.')
+    if (alpha==beta):
+        raise ValueError("alpha and beta have the same value, please set two different values for calculating the 4 gates spectrum.")
+    # Create t1, t2 and t3 based on t0 and beta
+    t2 = t1*alpha
+    t3 = t2*beta
+
+    gates = np.array([t1, t2, t3, t4]).T       # I traspose it so that each row corresponds to a rate window
+    # Check that no gate exceeds the maximum time index of the data
+    for i,t in enumerate(gates):
+        if (t>tr.index.max()).any():      # If any value in t is bigger than the maximum time of the transients
+            raise ValueError(f"These t{i+1} values are bigger than the highest value of the transient time index:\n {t} \n Adjust the input parameters accordingly")
+    # Find index location of the gates so that later we can use iloc for defining time ranges
+    gates_loc = np.array([np.array([tr.index.get_loc(t, method='backfill') for t in gate]) for gate in gates])
+    # Calculate rate windows
+    en = np.array([np.log((t[2]-t[0])/(t[1]-t[0])) / (t[2]-t[1]) for t in gates])
+
+    # Calculate picts signal for each rate window taking the average of the current around t1 and t2 based on t_avg
+    if integrate:
+        # PICTS signal is the ratio of the current integral between t1 and t2 and the same integral between t0 and t3
+        picts = pd.concat([tr.iloc[t[1]:t[2]].apply(lambda x: scipy.integrate.trapz(x, tr.iloc[t[1]:t[2]].index)) / \
+                           tr.iloc[t[0]:t[3]].apply(lambda x: scipy.integrate.trapz(x, tr.iloc[t[0]:t[3]].index))\
+                           for t in gates_loc ], axis=1)
+    else:
+        # Take the average of the currents in correspondence of the gates
+        i_mean = [[tr.iloc[t-t_avg:t+t_avg].mean() for t in gate_loc] for gate_loc in gates_loc]
+        # PICTS signal is the ratio of the current at t1 minus that at t2 and the same between t0 and t3
+        picts = pd.concat([(i[1]-i[2])/(i[0]-i[3]) for i in i_mean], axis=1)
+    picts = round_rate_window_values(picts, en, round_en)
+    picts.columns.name = 'Rate Window (Hz)'
+
+    return picts, gates
 
 
 
