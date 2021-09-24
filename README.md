@@ -8,7 +8,7 @@
 4. Select a folder where to save locally the library.
 5. Click `Clone`
 
-**Warning:** for importing the library inside your python code with `import mylib`, the local path you choose now must be inside the PUTHON PATH, i.e. listed in the sys.path list.
+**Warning:** for importing the library inside your python code with `import mylib`, the local path you choose now must be inside the PYTHON PATH, i.e. listed in the sys.path list.
 To check which folders are contained in sys.path, open a python console and type:
 ```python
 import sys
