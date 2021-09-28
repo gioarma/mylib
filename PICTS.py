@@ -360,7 +360,6 @@ def plot_transients (tr, en_visualization = False, t1=None, t2 = None, t_4gates 
         if (picts_type == '2 gates'):
             if cmap is None: colormap = hv.Cycle.default_cycles["default_colors"]
             else: colormap = cm(len(t1), cmap)
-            print('test')
             lines = hv.Overlay([hv.VLine(x=t1[i]).opts(color=colormap[i])*\
                                 hv.VLine(x=t2[i]).opts(color=colormap[i])\
                                 for i in range(len(t1))])
