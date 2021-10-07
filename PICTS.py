@@ -3,11 +3,13 @@ import pandas as pd
 import numpy as np
 from scipy.constants import physical_constants
 from scipy.optimize import curve_fit
+from scipy.optimize import root
 import warnings
 import scipy
 from scipy.constants import physical_constants
 from scipy.signal import savgol_filter
 from mylib.plotting import cmap as cm
+import hvplot.pandas
 import holoviews as hv
 import panel as pn
 
@@ -112,9 +114,42 @@ def round_rate_window_values (df, en, round_value):
 
     return df
 
+def en_2gates_high_injection (en, t1, t2):
+    '''
+    The roots of this function gives the value of en for a given t1 and t2.
+    This is a trascendental equation with 2 solutions. One solution is 0, the other is the real value of en.
+    For reference see Balland et al. 1984 part II and Supporting info of Pecunia et al. 2021.
+    '''      
+    return np.exp(en*(t2-t1)) - ( (1-en*t2)/(1-en*t1))
 
 
-def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None):
+def calculate_en (t1, t2, injection):
+    '''
+    Returns the rate window values starting from the gate values. In the case of high injection, it numerically solves the related equation
+    t1: numpy array coontaining values of the 1st gate \n
+    t2: numpy array containing values for the second gate \n
+    injection: can be either "high" or "low", corresponding to high or low injection from the light source. The expression for finding en is different in the 2 cases. \n
+    \n\n
+    
+    Returns: a numpy array with the rate window values
+    '''
+    if injection is 'high':
+        en = np.array([])
+        for t1, t2 in zip(t1,t2):    
+            en_guess = 1/(t2-t1)*(t2/t1)    # As a guess we use this, which seems to work well (totally empiric, 1/(t2-t1) alone sometimes does not work). The problem is we need to choose a starting point that is closer to our searched value than to 0, otherwise the function will return the 0 value as result.
+            # We use the root function from scipy.optimize to numerically solve 
+            en = np.append(en, root(en_2gates_high_injection, 
+                                    x0=en_guess, args=(t1, t2)).x)
+    elif injection is 'low':
+        en = np.log(t2/t1)/(t2-t1)    
+    else:
+        raise ValueError('Unknown kind of injection. It can be either "high" or "low".')
+    
+    return en
+
+
+
+def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None, injection = 'high'):
     '''
     tr: dataframe with transients at different temperatures\n
     t1: numpy array of values of t1, i.e. the first picts_2gates. VALUES IN SECONDS!\n
@@ -122,7 +157,8 @@ def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None):
     t_avg: number of points to be averaged around t1 and t2. Not relevant if integrate=True. E.g. if t_avg=2, I average between i(t1) and the 2 points below and above, 5 in total. Same for i(t2).\n
     integrate: whether to perform double boxcar integration, i.e. calculating the integral of the current between t1 and t2 for each temperature (ref: Suppl. info of https://doi.org/10.1002/aenm.202003968 )\n
     round_en: integer indicating how many decimals the rate windows should should be rounded to. If None, the default calculated values of en are kept.\n
-
+    injection: can be either "high" (default) or "low", corresponding to high or low injection from the light source. The expression for finding en is different in the 2 cases. \n
+    
     Returns a dataframe with PICTS spectra and t2 values
     '''
     # Initial checks
@@ -138,7 +174,8 @@ def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None):
     t1_loc = np.array([tr.index.get_loc(t, method = 'backfill') for t in t1])    # location of t1 values. needed for using iloc later since loc has problems with tolerance
     t2_loc = np.array([tr.index.get_loc(t, method = 'backfill') for t in t2])    # location of t2 vcalues
     # Calculate rate windows
-    en = np.log(beta)/(t1*(beta-1))
+    #en = np.log(beta)/(t1*(beta-1))
+    en = calculate_en(t1 = t1, t2 = beta*t1, injection=injection)
     # Calculate picts signal for each rate window taking the average of the current around t1 and t2 based on t_avg
     if integrate:
         picts = pd.concat([tr.iloc[t1:t2].apply(lambda x: scipy.integrate.trapz(x, tr.iloc[t1:t2].index)) \
@@ -341,7 +378,7 @@ def plot_transients (tr, en_visualization = False, t1=None, t2 = None, t_4gates 
     '''
     # Default options
     opts = dict(x='Time (s)', y=0, width=700, groupby = 'Temperature (K)',
-                ylabel = 'Current (A)', title = 'Rate window visualization', color = 'k')
+                ylabel = 'Current (A)', color = 'k')
     # Overwrite or add the user specified options to the otpions used to produce the plot
     for opt in hvplot_opts:
         opts[opt] = hvplot_opts[opt]
