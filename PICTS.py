@@ -20,6 +20,10 @@ h = physical_constants['Planck constant'][0]
 m_e = physical_constants['electron mass'][0]
 ###################################################
 
+
+
+####### DATA IMPORT  #######################################################################
+
 def read_transients (path, amplifier_gain, dropna=False, set_timetrack = True, drop=None):
 
     '''
@@ -71,6 +75,14 @@ def read_temp_ramp (path):
     temp = temp.set_index('Time (min)')                                             # Set time as index
 
     return temp
+
+###############################################################################################################
+
+
+
+
+
+###### DATA ANALYSI S####################################################################
 
 def normalize_transients (tr, i_0_range, i_inf_range, info = False):
     '''
@@ -358,11 +370,11 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel):
     return arrhenius, arrhenius_fit, S_fit, trap_params
 
 
+###############################################################################################################
 
 
 
-
-### PLOTTING ###################################################
+### PLOTTING + VISUALIZATION ###################################################
 
 def plot_transients (tr, en_visualization = False, t1=None, t2 = None, t_4gates = None, cmap=None, **hvplot_opts):
     '''
@@ -413,3 +425,47 @@ def plot_transients (tr, en_visualization = False, t1=None, t2 = None, t_4gates 
         return plot*lines
 
     else: return plot
+
+
+
+
+
+
+
+
+
+#############################  SAVING  ###############################################
+
+
+def save_arrhenius (arr, filename ,path = ''):
+    
+    '''
+    Saves the arrhenius plots in a csv file for further analysis
+    
+    arr: DataFrame/list of DataFrames. Each DataFrame should contain the arrhenius plots in form of 1000/T as index, ln(T2/en) as columns
+    filename: File name followed by the desired extension (typically .csv)
+    path: path where to save the data. If not specified, the csv is saved in the working directory
+    '''
+    
+    ## Check that arr is either DataFrame or list ##
+    if not isinstance(arr, (list, pd.DataFrame)):
+        raise TypeError("The arr parameter should be either a DataFrame or a list of DataFrames")
+    ## If arr is list, check that it contains DataFrames
+    if isinstance(arr, list):
+        for df in arr: 
+            if not isinstance(df, pd.DataFrame):
+                raise TypeError("arr should be a list of DataFrame objects only.")
+    # If user diddn't put / at the end of path, we add it
+    if path != '':
+        if path[-1] != '/': path = path+'/'
+    
+    # If arr is a single df, we put it into a 1-element list 
+    if isinstance(arr, pd.DataFrame):
+        arr = [arr]
+        
+    arr_stacked = [a.stack().reset_index().rename(columns={'ln(T²/en)': 'Trap', 0:'ln(T²/en)'}) for a in arr]     # Create a df with default index and 3 columns: 1000/T, Trap name and ln(ln(T²/en))
+
+    arr_all = pd.concat(arr_stacked, axis=0)  # concatenate all dfs vertically
+    arr_all.to_csv(path+filename)
+    
+            

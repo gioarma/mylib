@@ -20,6 +20,10 @@ h = physical_constants['Planck constant'][0]
 m_e = physical_constants['electron mass'][0]
 ###################################################
 
+
+
+####### DATA IMPORT  #######################################################################
+
 def read_transients (path, amplifier_gain, dropna=False, set_timetrack = True, drop=None):
 
     '''
@@ -72,6 +76,14 @@ def read_temp_ramp (path):
 
     return temp
 
+###############################################################################################################
+
+
+
+
+
+###### DATA ANALYSI S####################################################################
+
 def normalize_transients (tr, i_0_range, i_inf_range, info = False):
     '''
     tr: dataframe with transients at different temperatures
@@ -119,7 +131,7 @@ def en_2gates_high_injection (en, t1, t2):
     The roots of this function gives the value of en for a given t1 and t2.
     This is a trascendental equation with 2 solutions. One solution is 0, the other is the real value of en.
     For reference see Balland et al. 1984 part II and Supporting info of Pecunia et al. 2021.
-    '''      
+    '''
     return np.exp(en*(t2-t1)) - ( (1-en*t2)/(1-en*t1))
 
 
@@ -130,21 +142,21 @@ def calculate_en (t1, t2, injection):
     t2: numpy array containing values for the second gate \n
     injection: can be either "high" or "low", corresponding to high or low injection from the light source. The expression for finding en is different in the 2 cases. \n
     \n\n
-    
+
     Returns: a numpy array with the rate window values
     '''
-    if injection is 'high':
+    if injection == 'high':
         en = np.array([])
-        for t1, t2 in zip(t1,t2):    
+        for t1, t2 in zip(t1,t2):
             en_guess = 1/(t2-t1)*(t2/t1)    # As a guess we use this, which seems to work well (totally empiric, 1/(t2-t1) alone sometimes does not work). The problem is we need to choose a starting point that is closer to our searched value than to 0, otherwise the function will return the 0 value as result.
-            # We use the root function from scipy.optimize to numerically solve 
-            en = np.append(en, root(en_2gates_high_injection, 
+            # We use the root function from scipy.optimize to numerically solve
+            en = np.append(en, root(en_2gates_high_injection,
                                     x0=en_guess, args=(t1, t2)).x)
-    elif injection is 'low':
-        en = np.log(t2/t1)/(t2-t1)    
+    elif injection == 'low':
+        en = np.log(t2/t1)/(t2-t1)
     else:
         raise ValueError('Unknown kind of injection. It can be either "high" or "low".')
-    
+
     return en
 
 
@@ -158,7 +170,7 @@ def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None, injec
     integrate: whether to perform double boxcar integration, i.e. calculating the integral of the current between t1 and t2 for each temperature (ref: Suppl. info of https://doi.org/10.1002/aenm.202003968 )\n
     round_en: integer indicating how many decimals the rate windows should should be rounded to. If None, the default calculated values of en are kept.\n
     injection: can be either "high" (default) or "low", corresponding to high or low injection from the light source. The expression for finding en is different in the 2 cases. \n
-    
+
     Returns a dataframe with PICTS spectra and t2 values
     '''
     # Initial checks
@@ -358,11 +370,11 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel):
     return arrhenius, arrhenius_fit, S_fit, trap_params
 
 
+###############################################################################################################
 
 
 
-
-### PLOTTING ###################################################
+### PLOTTING + VISUALIZATION ###################################################
 
 def plot_transients (tr, en_visualization = False, t1=None, t2 = None, t_4gates = None, cmap=None, **hvplot_opts):
     '''
@@ -413,3 +425,47 @@ def plot_transients (tr, en_visualization = False, t1=None, t2 = None, t_4gates 
         return plot*lines
 
     else: return plot
+
+
+
+
+
+
+
+
+
+#############################  SAVING  ###############################################
+
+
+def save_arrhenius (arr, filename ,path = ''):
+    
+    '''
+    Saves the arrhenius plots in a csv file for further analysis
+    
+    arr: DataFrame/list of DataFrames. Each DataFrame should contain the arrhenius plots in form of 1000/T as index, ln(T2/en) as columns
+    filename: File name followed by the desired extension (typically .csv)
+    path: path where to save the data. If not specified, the csv is saved in the working directory
+    '''
+    
+    ## Check that arr is either DataFrame or list ##
+    if not isinstance(arr, (list, pd.DataFrame)):
+        raise TypeError("The arr parameter should be either a DataFrame or a list of DataFrames")
+    ## If arr is list, check that it contains DataFrames
+    if isinstance(arr, list):
+        for df in arr: 
+            if not isinstance(df, pd.DataFrame):
+                raise TypeError("arr should be a list of DataFrame objects only.")
+    # If user diddn't put / at the end of path, we add it
+    if path != '':
+        if path[-1] != '/': path = path+'/'
+    
+    # If arr is a single df, we put it into a 1-element list 
+    if isinstance(arr, pd.DataFrame):
+        arr = [arr]
+        
+    arr_stacked = [a.stack().reset_index().rename(columns={'ln(T²/en)': 'Trap', 0:'ln(T²/en)'}) for a in arr]     # Create a df with default index and 3 columns: 1000/T, Trap name and ln(ln(T²/en))
+
+    arr_all = pd.concat(arr_stacked, axis=0)  # concatenate all dfs vertically
+    arr_all.to_csv(path+filename)
+    
+            
