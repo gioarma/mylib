@@ -1,17 +1,21 @@
 from nptdms import TdmsFile
 import pandas as pd
 import numpy as np
+import re
 from scipy.constants import physical_constants
 from scipy.optimize import curve_fit
 from scipy.optimize import root
 import warnings
 import scipy
+from natsort import natsorted
+import glob
 from scipy.constants import physical_constants
 from scipy.signal import savgol_filter
 from mylib.plotting import cmap as cm
 import hvplot.pandas
 import holoviews as hv
 import panel as pn
+from datetime import datetime
 
 ###### Physical constants   #######################
 k_B = physical_constants['Boltzmann constant'][0]
@@ -22,7 +26,7 @@ m_e = physical_constants['electron mass'][0]
 
 
 
-####### DATA IMPORT  #######################################################################
+####### DATA IMPORT/EXPORT  #######################################################################
 
 def read_transients (path, amplifier_gain, dropna=False, set_timetrack = True, drop=None):
 
@@ -76,13 +80,113 @@ def read_temp_ramp (path):
 
     return temp
 
+
+
+def save_arrhenius (arr, trap_params, sample_name, picts_method , info = '', path = ''):
+    
+    '''
+    Saves the arrhenius plots in a csv file for further analysis
+    
+    arr: DataFrame/list of DataFrames. Each DataFrame should contain the arrhenius plots in form of 1000/T as index, ln(T2/en) as columns
+    sample_name = string containing the sample name (use just the code, not any pre-code like 'MAPbBr' or else)
+    picts_method = string containing the method used to obtain the arrhenius plot. Can be: '2gates', '4gates', 'integral2gates', 'integral4gates'
+    info = any additional information on the arrhenius plot, e.g. 'scan1', 'scan2', 'X-ray-irradiated', etc. Do not use underscores to separate words, use just dashes
+    path: path where to save the data. If not specified, the csv is saved in the working directory
+    '''
+    
+    ## Check that arr is either DataFrame or list ##
+    if not isinstance(arr, (list, pd.DataFrame)):
+        raise TypeError("The arr parameter should be either a DataFrame or a list of DataFrames")
+    ## If arr is list, check that it contains DataFrames
+    if isinstance(arr, list):
+        for df in arr: 
+            if not isinstance(df, pd.DataFrame):
+                raise TypeError("arr should be a list of DataFrame objects only.")
+            if len(arr) != len(trap_params):   # Check that arr and trap_params contain the same number of elements
+                raise ValueError("arr list and trap_params lists do not have the same size.")
+    ## Check that trap_params is either DataFrame or list ##
+    if not isinstance(trap_params, (list, pd.DataFrame)):
+        raise TypeError("The trap_params parameter should be either a DataFrame or a list of DataFrames")
+    ## If trap_params is list, check that it contains DataFrames
+    if isinstance(trap_params, list):
+        for df in trap_params: 
+            if not isinstance(df, pd.DataFrame):
+                raise TypeError("trap_params should be a list of DataFrame objects only.")
+
+    # If user diddn't put / at the end of path, we add it
+    if path != '':
+        if path[-1] != '/': path = path+'/'
+    
+    # If arr is a single df, we put it into a 1-element list 
+    if isinstance(arr, pd.DataFrame):
+        arr = [arr]
+    if isinstance(trap_params, pd.DataFrame):
+        trap_params = [trap_params]
+    
+    # Get current time expressed from year to seconds
+    current_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    # Create full path + file name
+    if info=='': 
+        arr_filename = path + 'arrhenius_' + sample_name + '_' + picts_method + '_' + current_time+'.csv'
+    else: 
+        arr_filename = path + 'arrhenius_' + sample_name + '_' + picts_method + '_' + info + '_' + current_time+'.csv'
+        
+    arr_stacked = [a.stack().reset_index(0).rename(columns={0:'ln(T²/en)'}) for a in arr]     # Create a df with default index and 3 columns: 1000/T, Trap name and ln(ln(T²/en))
+    arr_all = pd.concat(arr_stacked, axis=0)  # concatenate all arr vertically
+    trap_params_stacked = [t.T for t in trap_params]
+    trap_params_all = pd.concat(trap_params_stacked)   # concatenate all arr vertically
+    
+    df = arr_all.join(trap_params_all)
+    # Change formatting of some column names so that it's easier to work on the dataframe later
+    df = df.rename(columns = {
+        'Eₐ (eV)': 'Ea (eV)',
+        'δEₐ (eV)': 'dEa (eV)',
+        'σ (cm²)': 'sigma (cm2)',
+        'δσ (cm²)': 'dsigma (cm2)'
+    })
+    # Add other info to the dataframe:
+    df['Date saved'] = current_time
+    df['Sample name'] = sample_name
+    df['PICTS method'] = picts_method
+    df['Info'] = info
+    # Save the csv file
+    df.to_csv(arr_filename)
+    
+
+def import_arrhenius(path='arrhenius_data', sample_info_path='sample_info.xlsx'):
+    
+    '''
+    Imports the arrhenius plot data, getting all the sample information from the file name and from the excel file with further info on the samples\n\n
+    
+    path: string containing the path to the folder where the csv files f the arrhenius plots are stored.\n\n
+    sample_info_path: string containing the path to the excel file that contains all the additional info on the samples
+    
+    '''
+    ## Get info from file name and create the dataframe
+    
+    file_list=natsorted(glob.glob(path+'/*'))  # Find all files in the folder
+    ## Concatenate all data in a single DataFrame
+    arr = pd.concat([pd.read_csv(f) for f in file_list ])
+    arr['Sample name'] = arr['Sample name'].astype(str)      # convert sample name to string, since it can be seen as an integer by read_csv and create problems when joining dataframes afterwards
+    # We convert this into a multiindex dataframe so that we can join it with sample_info after. We have to do this because arr and sample_info do not have the same amount of rows for each sample (sample_info has only 1 row for each sample)
+    arr['count'] = arr.groupby('Sample name').cumcount()        # Create a count column, which is the inner level of the multiindex. It's simply a count of each repetition of Sample name
+    arr.set_index(['Sample name','count'], inplace=True)        # The outer level of the multiindex is Sample name
+    
+    ## Get other info from the excel file
+    sample_info = pd.read_excel('sample_info.xlsx', engine='openpyxl', index_col='Sample name')
+    sample_info.index = sample_info.index.astype(str)       # On excel the sample name may be considered as a int instead of a string if there are no letters in the name, so we convert it to string
+    
+    df = arr.join(sample_info).reset_index().drop('count', axis=1)   # joining the two dfs, then resetting index and dropping count (I needed them just to perferm the join smoothly)
+    df = df.rename(columns={'Unnamed: 0': 'Trap'})                   # Trap column was unnamed from read csv, so we give it a name here
+    return df
+
 ###############################################################################################################
 
 
 
 
 
-###### DATA ANALYSI S####################################################################
+###### DATA ANALYSIS####################################################################
 
 def normalize_transients (tr, i_0_range, i_inf_range, info = False):
     '''
@@ -339,7 +443,7 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel):
                                         index = 1000/Tm[trap].values,
                                         columns = [trap])
                            for trap in Tm.columns])
-    arrhenius.columns.name = 'ln(T²/en)'
+    #arrhenius.columns.name = 'ln(T²/en)'
     arrhenius.index.name='1000/T (K⁻¹)'
 
     # Linear fit of arrhenius plots
@@ -427,45 +531,3 @@ def plot_transients (tr, en_visualization = False, t1=None, t2 = None, t_4gates 
     else: return plot
 
 
-
-
-
-
-
-
-
-#############################  SAVING  ###############################################
-
-
-def save_arrhenius (arr, filename ,path = ''):
-    
-    '''
-    Saves the arrhenius plots in a csv file for further analysis
-    
-    arr: DataFrame/list of DataFrames. Each DataFrame should contain the arrhenius plots in form of 1000/T as index, ln(T2/en) as columns
-    filename: File name followed by the desired extension (typically .csv)
-    path: path where to save the data. If not specified, the csv is saved in the working directory
-    '''
-    
-    ## Check that arr is either DataFrame or list ##
-    if not isinstance(arr, (list, pd.DataFrame)):
-        raise TypeError("The arr parameter should be either a DataFrame or a list of DataFrames")
-    ## If arr is list, check that it contains DataFrames
-    if isinstance(arr, list):
-        for df in arr: 
-            if not isinstance(df, pd.DataFrame):
-                raise TypeError("arr should be a list of DataFrame objects only.")
-    # If user diddn't put / at the end of path, we add it
-    if path != '':
-        if path[-1] != '/': path = path+'/'
-    
-    # If arr is a single df, we put it into a 1-element list 
-    if isinstance(arr, pd.DataFrame):
-        arr = [arr]
-        
-    arr_stacked = [a.stack().reset_index().rename(columns={'ln(T²/en)': 'Trap', 0:'ln(T²/en)'}) for a in arr]     # Create a df with default index and 3 columns: 1000/T, Trap name and ln(ln(T²/en))
-
-    arr_all = pd.concat(arr_stacked, axis=0)  # concatenate all dfs vertically
-    arr_all.to_csv(path+filename)
-    
-            
