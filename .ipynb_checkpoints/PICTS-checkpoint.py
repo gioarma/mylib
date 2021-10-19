@@ -82,36 +82,36 @@ def read_temp_ramp (path):
 
 
 
-def save_arrhenius (arr, trap_params, sample_name, picts_method , info = '', path = ''):
+def save_arrhenius (arr, trap_params, sample_name, scan_number, gates_number , 
+                    integral=None, measurement_date = None,
+                    bias=None, xray_dose=None, excitation_wavelength = None,
+                    light_source_current=None, T_min=None, T_max=None, heating_rate=None,
+                    path = '', append_current_time=False):
     
     '''
-    Saves the arrhenius plots in a csv file for further analysis
+    Saves the arrhenius plots in a csv file for further analysis.
     
-    arr: DataFrame/list of DataFrames. Each DataFrame should contain the arrhenius plots in form of 1000/T as index, ln(T2/en) as columns
-    sample_name = string containing the sample name (use just the code, not any pre-code like 'MAPbBr' or else)
-    picts_method = string containing the method used to obtain the arrhenius plot. Can be: '2gates', '4gates', 'integral2gates', 'integral4gates'
-    info = any additional information on the arrhenius plot, e.g. 'scan1', 'scan2', 'X-ray-irradiated', etc. Do not use underscores to separate words, use just dashes
-    path: path where to save the data. If not specified, the csv is saved in the working directory
+    arr: DataFrame/list of DataFrames. Each DataFrame should contain the arrhenius plots in form of 1000/T as index, ln(T2/en) as columns\n\n
+    sample_name: string containing the sample name (use just the code, not any pre-code like 'MAPbBr' or else)\n\n
+    picts_method: string containing the method used to obtain the arrhenius plot. Can be: 2 (2 gates) or 4 (4 gates)\n\n
+    integral: bool saying if the picts method was standard (integral=False) or integral (integral=True)\n\n
+    measurement date: string containing the measurement date expressed as 'dd/mm/yyyy'. \n\n
+    scan_number: number of temperature scan for the sample, if it's the first T scan, then scan_number=1 and so on. \n\n
+    bias: bias (in V) applied to the sample during measurement. \n\n
+    xray_dose: total X-ray dose (in Gy) delivered to the sample. \n\n 
+    excitation_wavelength: wavelength (in nm) of the light source. \n\n 
+    light_source_current: current (in mA) flowing through the LED/LASER. \n\n
+    T_min: minimum temperature (in K) reached during the scan.
+    T_max: maximum temperature (in K) reached during the scan.
+    heating_rate: heating rate (in K/min) of the scan.
+    path: path where to save the data. If not specified, the csv is saved in the working directory. \n\n
+    append_current_time: whether you want to append to the end of the file name the date of when the file was saved. This allows to avoid overwriting when you save twice a file with the same parameters.\n
     '''
-    
-    ## Check that arr is either DataFrame or list ##
-    if not isinstance(arr, (list, pd.DataFrame)):
-        raise TypeError("The arr parameter should be either a DataFrame or a list of DataFrames")
-    ## If arr is list, check that it contains DataFrames
+
     if isinstance(arr, list):
         for df in arr: 
-            if not isinstance(df, pd.DataFrame):
-                raise TypeError("arr should be a list of DataFrame objects only.")
             if len(arr) != len(trap_params):   # Check that arr and trap_params contain the same number of elements
                 raise ValueError("arr list and trap_params lists do not have the same size.")
-    ## Check that trap_params is either DataFrame or list ##
-    if not isinstance(trap_params, (list, pd.DataFrame)):
-        raise TypeError("The trap_params parameter should be either a DataFrame or a list of DataFrames")
-    ## If trap_params is list, check that it contains DataFrames
-    if isinstance(trap_params, list):
-        for df in trap_params: 
-            if not isinstance(df, pd.DataFrame):
-                raise TypeError("trap_params should be a list of DataFrame objects only.")
 
     # If user diddn't put / at the end of path, we add it
     if path != '':
@@ -126,11 +126,12 @@ def save_arrhenius (arr, trap_params, sample_name, picts_method , info = '', pat
     # Get current time expressed from year to seconds
     current_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     # Create full path + file name
-    if info=='': 
-        arr_filename = path + 'arrhenius_' + sample_name + '_' + picts_method + '_' + current_time+'.csv'
-    else: 
-        arr_filename = path + 'arrhenius_' + sample_name + '_' + picts_method + '_' + info + '_' + current_time+'.csv'
-        
+    filename = path + 'arrhenius_' + sample_name + '_Scan'+ str(scan_number) + '_' + str(gates_number) + 'gates'
+    if integral: filename+='_integral'
+    else: filename+='_standard'
+    if append_current_time: filename+= '_'+current_time
+    filename+='.csv'
+    
     arr_stacked = [a.stack().reset_index(0).rename(columns={0:'ln(T²/en)'}) for a in arr]     # Create a df with default index and 3 columns: 1000/T, Trap name and ln(ln(T²/en))
     arr_all = pd.concat(arr_stacked, axis=0)  # concatenate all arr vertically
     trap_params_stacked = [t.T for t in trap_params]
@@ -146,11 +147,20 @@ def save_arrhenius (arr, trap_params, sample_name, picts_method , info = '', pat
     })
     # Add other info to the dataframe:
     df['Date saved'] = current_time
+    df['Date measured'] = measurement_date
     df['Sample name'] = sample_name
-    df['PICTS method'] = picts_method
-    df['Info'] = info
+    df['Number of gates'] = gates_number
+    df['Integral'] = integral
+    df['Scan number'] = scan_number
+    df['X-ray dose (Gy)'] = xray_dose
+    df['Bias (V)'] = bias
+    df['Excitation wavelength (nm)'] = excitation_wavelength
+    df['Light source current (mA)'] = light_source_current
+    df['T min (K)'] = T_min
+    df['T max (K)'] = T_max
+    df['Heating rate (K/min)'] = heating_rate
     # Save the csv file
-    df.to_csv(arr_filename)
+    df.to_csv(filename)
     
 
 def import_arrhenius(path='arrhenius_data', sample_info_path='sample_info.xlsx'):
@@ -161,23 +171,28 @@ def import_arrhenius(path='arrhenius_data', sample_info_path='sample_info.xlsx')
     path: string containing the path to the folder where the csv files f the arrhenius plots are stored.\n\n
     sample_info_path: string containing the path to the excel file that contains all the additional info on the samples
     
-    '''
-    ## Get info from file name and create the dataframe
-    
+    '''    
     file_list=natsorted(glob.glob(path+'/*'))  # Find all files in the folder
+    
     ## Concatenate all data in a single DataFrame
     arr = pd.concat([pd.read_csv(f) for f in file_list ])
     arr['Sample name'] = arr['Sample name'].astype(str)      # convert sample name to string, since it can be seen as an integer by read_csv and create problems when joining dataframes afterwards
     # We convert this into a multiindex dataframe so that we can join it with sample_info after. We have to do this because arr and sample_info do not have the same amount of rows for each sample (sample_info has only 1 row for each sample)
     arr['count'] = arr.groupby('Sample name').cumcount()        # Create a count column, which is the inner level of the multiindex. It's simply a count of each repetition of Sample name
     arr.set_index(['Sample name','count'], inplace=True)        # The outer level of the multiindex is Sample name
+    # Adjust arr columns 
+    arr['Date measured'] = pd.to_datetime(arr['Date measured'], dayfirst=True)   # Convert measurement date in datetime format
     
     ## Get other info from the excel file
     sample_info = pd.read_excel('sample_info.xlsx', engine='openpyxl', index_col='Sample name')
     sample_info.index = sample_info.index.astype(str)       # On excel the sample name may be considered as a int instead of a string if there are no letters in the name, so we convert it to string
     
     df = arr.join(sample_info).reset_index().drop('count', axis=1)   # joining the two dfs, then resetting index and dropping count (I needed them just to perferm the join smoothly)
-    df = df.rename(columns={'Unnamed: 0': 'Trap'})                   # Trap column was unnamed from read csv, so we give it a name here
+    df = df.rename(columns={'Unnamed: 0': 'Trap'})  # Trap column was unnamed from read csv, so we give it a name here
+    
+    # Create new columns
+    df['Sample age'] = df['Date measured']-df['Date growth']   # Age of the sample when measured
+    df['T range (K)'] = df['T max (K)']-df['T min (K)']   # Age of the sample when measured
     return df
 
 ###############################################################################################################
