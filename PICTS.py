@@ -191,7 +191,7 @@ def import_arrhenius(path='arrhenius_data', sample_info_path='sample_info.xlsx')
     df = df.rename(columns={'Unnamed: 0': 'Trap'})  # Trap column was unnamed from read csv, so we give it a name here
     
     # Create new columns
-    df['Sample age'] = df['Date measured']-df['Date growth']   # Age of the sample when measured
+    df['Sample age (days)'] = (df['Date measured']-df['Date growth']).astype('timedelta64[h]')/24   # Age of the sample when measured. We convert it to days otherwise in the plots we get the time in nanoseconds, which is a mess
     df['T range (K)'] = df['T max (K)']-df['T min (K)']   # Age of the sample when measured
     return df
 
