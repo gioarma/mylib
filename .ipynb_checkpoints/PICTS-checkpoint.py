@@ -223,14 +223,28 @@ def normalize_transients (tr, i_0_range, i_inf_range, info = False):
         return tr_norm
 
 
+def create_t1_values (t1_min, t1_shift, n_windows, method):
+    '''
+    Creates the set of t1 values that represent the first gates of all rate windows.\n\n
+    t1_min: minimum value of t1\n
+    t1_shift: for the linear method it represents the "delta t" between one gate and the next\n
+    n_windows: nuber of rate windows, i.e. number of t1 values of the returned array \n
+    method: accepted options are 'linear' (linearly increase the t1 values) \n\n
+    Returns:
+    numpy array with all t1 values.
+    '''
+    if method=='linear':
+        t1 =  np.array([t1_min+t1_shift*i for i in range(n_windows)])
+    else:
+        raise NotImplementedError("Only linear method is available for the moment!")
+    return t1
+
+
 def round_rate_window_values (df, en, round_value):
     '''
-    df: input dataframe where columns are supposed to be en values
-
-    en: rate window values
-
-    round_value: decimal position en windows should be rounded to
-
+    df: input dataframe where columns are supposed to be en values\n
+    en: rate window values\n
+    round_value: decimal position en windows should be rounded to\n\n
     Returns:
     Dataframe with column values that are rate windows which have been rounded to the desired value.
     '''
@@ -280,9 +294,15 @@ def calculate_en (t1, t2, injection):
 
 
 
-def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None, injection = 'high'):
+def picts_2gates (tr, beta, t_avg, t1_min=None, t1_method='linear', 
+                  t1_shift=None, n_windows=None, t1=None, integrate = False, 
+                  round_en = None, injection = 'high'):
     '''
     tr: dataframe with transients at different temperatures\n
+    t1_min: minimum value of t1. Necessary if t1 is not provided\n
+    t1_shift: for the linear method it represents the "delta t" between one gate and the next
+    n_windows: nuber of rate windows, i.e. number of t1 values of the returned array \n
+    t1_method: method used to create t1 values. Accepted options are 'linear' (linearly increase the t1 values)
     t1: numpy array of values of t1, i.e. the first picts_2gates. VALUES IN SECONDS!\n
     beta: defined as t2/t1. t2 vcalues are obtained from this and t1\n
     t_avg: number of points to be averaged around t1 and t2. Not relevant if integrate=True. E.g. if t_avg=2, I average between i(t1) and the 2 points below and above, 5 in total. Same for i(t2).\n
@@ -293,10 +313,15 @@ def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None, injec
     Returns a dataframe with PICTS spectra and t2 values
     '''
     # Initial checks
-    if (type(t1)!=np.ndarray):
+    if (type(t1)!=np.ndarray and t1 is not None):
         raise TypeError('t1 must be numpy.ndarray object')
+    # Create t1 values, if needed
+    if t1 is None:
+        if (t1_min==None or t1_shift==None or n_windows==None): raise ValueError("If t1 is not specified, you need to specify t1_min, t1_shift and n_windows")
+        t1 = create_t1_values(t1_min, t1_shift, n_windows, method=t1_method)
     if (t1>tr.index.max()).any():      # If any value in t1 is bigger than the maximum time of the transients
         raise ValueError('Some t1 values are bigger than the highest value of the transient time index')
+
     # Create t2 based on t1 and beta
     t2 = np.array([beta*t1 for t1 in t1])
     if (t2>tr.index.max()).any():      # If any value in t2 is bigger than the maximum time of the transients
@@ -316,18 +341,25 @@ def picts_2gates (tr, t1, beta, t_avg, integrate = False, round_en = None, injec
                            for t1,t2 in zip(t1_loc,t2_loc)], axis=1)
     picts = round_rate_window_values(picts, en, round_en)
     picts.columns.name = 'Rate Window (Hz)'
+    gates = np.array([t1, t2]).T       # I traspose it so that each row corresponds to a rate window
+    
+    return picts, gates
 
-    return picts, t2
 
 
-
-def picts_4gates (tr, t1, t4, alpha, beta, t_avg, integrate = False, round_en = None):
+def picts_4gates (tr, alpha, beta, t_avg, t1_min=None, t1_method='linear', 
+                  t1_shift=None, n_windows=None, gamma=None, t1=None, t4=None, integrate = False, round_en = None):
     '''
     tr: dataframe with transients at different temperatures\n
+    t1_min: minimum value of t1. Necessary if t1 is not provided\n
+    t1_shift: for the linear method it represents the "delta t" between one gate and the next
+    n_windows: nuber of rate windows, i.e. number of t1 values of the returned array \n
+    t1_method: method used to create t1 values. Accepted options are 'linear' (linearly increase the t1 values)
     t1: numpy array of values of t0, i.e. the first gates. VALUES IN SECONDS!\n
     t4: numpy array of values of t3, i.e. the last gates. Remember, the best is t4>9*t1\n
     alpha: defined as t2/t1. t2 values are obtained from this and t1\n
     beta: defined as t3/t1. t3 values are obtained from this and t1\n
+    gamma: defined as t4/t1. t4 values are obtained from this if t4 is not explicitly passed.\n
     t_avg: number of points tobe averaged around the gates. Not relevant if integrate=True. E.g. if t_avg=2, I average between i(t1) and the 2 points below and above, 5 in total. Same for i(t2), i(t3), i(t4).\n
     integrate: whether to perform 4 gate integration, i.e. calculating the integral of the current between t2 and t3 divided by the same integral between t1 and t4 for each temperature (ref: Suppl. info of https://doi.org/10.1002/aenm.202003968 )
     round_en: integer indicating how many decimals the rate windows should should be rounded to. If None, the default calculated values of en are kept.
@@ -337,15 +369,22 @@ def picts_4gates (tr, t1, t4, alpha, beta, t_avg, integrate = False, round_en = 
     2. a numpy array with rate windows on rows and t1, t2, t3, t4 values on columns
     '''
     # Initial checks
-    if (type(t1)!=np.ndarray):
+    if (type(t1)!=np.ndarray and t1 is not None):
         raise TypeError('t1 must be numpy.ndarray object')
-    if (t4<10*t1).any():
-        warnings.warn('Some or all t4 values are less than 10*t1, which is an essential condition for performing 4gates PICTS. Please, change them accordingly.')
     if (alpha==beta):
         raise ValueError("alpha and beta have the same value, please set two different values for calculating the 4 gates spectrum.")
-    # Create t1, t2 and t3 based on t0 and beta
+    if t1 is None:
+        if (t1_min==None or t1_shift==None or n_windows==None): 
+            raise ValueError("If t1 is not specified, you need to specify t1_min, t1_shift and n_windows")
+        t1 = create_t1_values(t1_min, t1_shift, n_windows, method=t1_method)
+    # Create t2 and t3 and t4 based on t1, alpha, beta, gamma
     t2 = t1*alpha
-    t3 = t2*beta
+    t3 = t1*beta
+    if t4 is None:        # Create t4 if not explicitly passed
+        if gamma is None: raise ValueError("If t4 is not specified, you need to specify gamma")
+        t4 = t1*gamma
+    if (t4<10*t1).any():
+        warnings.warn('Some or all t4 values are less than 10*t1, which is an essential condition for performing 4gates PICTS. Please, change them accordingly.')
 
     gates = np.array([t1, t2, t3, t4]).T       # I traspose it so that each row corresponds to a rate window
     # Check that no gate exceeds the maximum time index of the data
@@ -384,7 +423,7 @@ def gaus_fit (df, T_range, fit_window):
 
     T_range: list-like. Temperature range where the peak is located
 
-    fit_window: Expressed in Kelvin. Since the peakpositions move for different rate windows, for each rate window
+    fit_window: Expressed in Kelvin. Since the peak positions move for different rate windows, for each rate window
                 the peak is performed only in the range of +/- fit_window around the temperature at which
                 the curve maximum is located. E.g. max is at 200K and fit_window=10, we just fit from 190K
                 to 210K
@@ -426,29 +465,41 @@ def gaus_fit (df, T_range, fit_window):
     return df_fit
 
 
-def arrhenius_fit (S, T_traps, fit_window, m_eff_rel):
+def arrhenius_fit (S, T_traps, fit_window, m_eff_rel, exclude_en=None):
     '''
-    S: dataframe with PICTS signal (columns are rate windows, index is temperature)
-
-    T_traps: dictionary where the key is the trap name and the value is a list of 2 values indicating the temperature range whewre the corresponding peaks appear
-
-    fit_window: Expressed in Kelvin. Since the peak positions move for different rate windows, for each rate window
-                the peak is performed only in the range of +/- fit_window around the temperature at which
-                the curve maximum is located. E.g. max of a rate window is at 200K and fit_window=10, then we just fit from 190K
-                to 210K
-
-    m_eff_rel: relative effective mass i.e. the dimensionless quantity m_eff/m_e, where m_e is the electronic mass.
+    S: dataframe with PICTS signal (columns are rate windows, index is temperature). Alternatively, can be a tuple outputed by picts_2gates/picts_4gates, where the first element is the picts DataFrame.\n
+    T_traps: dictionary where the key is the trap name and the value is a list of 2 values indicating the temperature range whewre the corresponding peaks appear\n
+    fit_window: Expressed in Kelvin. Can be either int/float value or dictionary with keys corresponding to the Trap names expressed in T_traps.
+                If it's a int/float, the same fit window will be used for all traps
+                Since the peak positions move for different rate windows, for each rate window
+                the fit is performed only in the range of +/- fit_window around the temperature at which
+                the curve maximum is located. E.g. max of a rate window is found at 200K and fit_window=10, then we just fit from 190K
+                to 210K.\n
+    m_eff_rel: relative effective mass i.e. the dimensionless quantity m_eff/m_e, where m_e is the electronic mass.\n
+    exclude_en: list of int indicating which rate windows not to consider in the gaussian fit of the peaks.
+                Integers should be numbers from 0 to n_windows-1. 
+                It can also be a dictionary where keys must be the same as the ones of T_traps
+                and the values should be lists indicating the ens to exclude for each trap.
 
     Returns:
-    1 a dataframe with arrhenius plot data,
-    2 a dataframe with arrhenius plot fits
-    3 a dataframe with the gaussian fits of the picts spectrum for each trap
-    4 a dataframe with trap parameters (Ea,sigma)
+    0 a dataframe with arrhenius plot data,
+    1 a dataframe with arrhenius plot fits
+    2 a dataframe with the gaussian fits of the picts spectrum for each trap
+    3 a dataframe with trap parameters (Ea,sigma)
     '''
+    # If fit_window and exclude_en are not dictionaries, we create a dictionary where the values for each trap are the same as the one passed by the user 
+    if isinstance(fit_window, (int,float)):
+        fit_window = dict.fromkeys(T_traps.copy(),fit_window)    # Create a copy of T_traps dict so that we have the same keys, then set value equal to fit_window for all keys using dict.fromkeys()
+    if isinstance(exclude_en, list):
+        exclude_en = dict.fromkeys(T_traps.copy(),exclude_en)    # Same as for fit_window
+    # If a tuple from picts_2gates is passed we exctract just the first item: the DataFrame
+    if isinstance(S, tuple):
+        S=S[0]
     # Gaussian peak fitting for finding Tm, temperature corresponding to peak max
     fits = {}
     for trap in T_traps:
-        fits[trap] = gaus_fit(S, T_range = T_traps[trap], fit_window=fit_window)  # do gaussian fit of all peaks of a certain trap
+        if exclude_en is not None: S = S.drop(S.columns[exclude_en[trap]], axis=1)       # Before fitting, drop the columns that the user wants to exclude
+        fits[trap] = gaus_fit(S, T_range = T_traps[trap], fit_window=fit_window[trap])  # do gaussian fit of all peaks of a certain trap
     S_fit = pd.concat(fits, axis=1)                                       # multi-column dataframe with gaussian fits. First level are the traps, second level are the rate windows for each trap
     Tm = S_fit.idxmax().unstack(level=0)                                  # Tm is the T at wich the fit has a maximum. This is a DataFrame with Rate windows as index and trap names as columns
 
@@ -495,7 +546,7 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel):
 
 ### PLOTTING + VISUALIZATION ###################################################
 
-def plot_transients (tr, en_visualization = False, t1=None, t2 = None, t_4gates = None, cmap=None, **hvplot_opts):
+def plot_transients (tr, en_visualization = False, t1=None, t2 = None, gates = None, cmap=None, **hvplot_opts):
     '''
     Plots the transients with an interactive widget allowing to visualize different temperatures. Returns an hvplot object.\n
     tr: Dataframe with time on index (default name 'Time (s)') and temperatures on columns (default name 'Temperature (K)')\n
@@ -503,31 +554,28 @@ def plot_transients (tr, en_visualization = False, t1=None, t2 = None, t_4gates 
     en_visualization: shows a the transients with overlayed the position of t1 and t2 gates. If True, also t1 and t2 must be specified\n
     t1: t1 gates corresponding to the plotted spectrum (needed only if en_visualization==True)\n
     t2: t2 gates corresponding to the plotted spectrum (needed only if en_visualization==True)\n
-    t_4gates: numpy array containing rate windows in rows and t1,t2,t3,t4 in columns (as returned by picts_4gates)
+    gates: numpy array containing rate windows in rows and t1,t2, and optionally t3 and t4, in columns (as returned by picts_2gates and picts_4gates)
     cmap: colormap for the spectrum
     hvplot_opts: hvplot parameters to customize the spectrum plot.
     '''
     # Default options
-    opts = dict(x='Time (s)', y=0, width=700, groupby = 'Temperature (K)',
+    opts = dict(x='Time (s)', y=0, width=700,
                 ylabel = 'Current (A)', color = 'k')
     # Overwrite or add the user specified options to the otpions used to produce the plot
     for opt in hvplot_opts:
         opts[opt] = hvplot_opts[opt]
-
-    # Create plot
-    plot = tr.stack().reset_index().hvplot(**opts)
-
+    
     # Overlay rate window visualization if specified
     if en_visualization == True:
-        picts_type = '2 gates'
-        if (t1 is None and t2 is None and t_4gates is not None):
-            picts_type = '4 gates'
-        if (t_4gates is None and (t1 is None or t2 is None)): raise ValueError('You need to specify t1 and t2 or t4_gates if en_visualziation = True')
-
+        if np.shape(gates)[1] == 2: picts_type='2 gates'
+        else: picts_type='4 gates'
         # 2 gates visualization
         if (picts_type == '2 gates'):
             if cmap is None: colormap = hv.Cycle.default_cycles["default_colors"]
             else: colormap = cm(len(t1), cmap)
+            if gates is not None:            # If the user passed gates, t1 and t2 are gotten from that
+                t1 = gates.T[0]
+                t2 = gates.T[1]
             lines = hv.Overlay([hv.VLine(x=t1[i]).opts(color=colormap[i])*\
                                 hv.VLine(x=t2[i]).opts(color=colormap[i])\
                                 for i in range(len(t1))])
@@ -539,10 +587,74 @@ def plot_transients (tr, en_visualization = False, t1=None, t2 = None, t_4gates 
                                 hv.VLine(x=t[1]).opts(color=colormap[i])*\
                                 hv.VLine(x=t[2]).opts(color=colormap[i])*\
                                 hv.VLine(x=t[3]).opts(color=colormap[i])
-                                for i,t in enumerate(t_4gates)])
+                                for i,t in enumerate(gates)])
+        # Return a pn.interact where the function is a lambda that returns an Overlay of tr and VLines and the variable is
+        return pn.interact(lambda Temperature: tr[Temperature].hvplot(**opts)*lines,
+                           Temperature=list((tr.columns)))
+    else: 
+        return pn.interact(lambda Temperature: tr[Temperature].hvplot(**opts),
+                           Temperature=list((tr.columns)))
 
-        return plot*lines
 
-    else: return plot
+    
+    
+def plot_arrhenius(arr, arr_fit=None, **hvplot_opts):
+    '''
+    Plots the arrhenius data with the correct x and y labels
+    arr: Dataframe with 1000/T as index and ln(en/T^2) values on the columns. Each column should represent a different trap
+    arr_fit: Same structure as arr, should contain the fit of the corresponding arrhenius lines.
+    hvplot_opts: options to be passed to hvplot plotting library
+    '''
+    # Default plotting options
+    opts = dict(kind='scatter', ylabel='ln(T²/en)', xlabel='1000/T (K⁻¹)')
+    # Overright or add options, if needed
+    for key, value in hvplot_opts.items(): opts[key]=value
+    plot = arr.hvplot(**opts)
+    if arr_fit is not None:
+        plot = plot*arr_fit.hvplot(color='red')
+    return plot
 
 
+
+
+def plot_all(picts, tr=None, arrhenius=None, show_arrhenius=True):
+    '''
+    
+    '''
+    # Plot options
+    S_opts = dict(width=600, frame_height=300)
+    S_fit_opts = dict(color='red', line_width=1.5)
+    tr_opts = dict(en_visualization=True, width=600,height=300,
+                   xlim=[0,None])
+    arr_opts = dict(subplots=True, width=350)
+    
+    # Get spectrum and gates from picts data
+    S = picts[0]
+    gates = picts[1]
+    # Get all components from arrhenius data
+    if arrhenius is not None:
+        arr, arr_fit, S_fit, trap_params = arrhenius
+    
+    ### LEFT COLUMN ###    
+    # Create the spectrum plot and put it in a column that will be on the left of the final panel
+    if arrhenius is None and show_arrhenius==True: 
+        plot_S = S.hvplot(**S_opts)    # Show lines if the gauss fit is not overlayed
+    else: plot_S = hv.Overlay(S.hvplot(kind='scatter', size=1, **S_opts)*\
+                              hv.Overlay([S_fit[trap].hvplot(**S_fit_opts) for trap in arr.columns])
+                             )          ## Overlay the gaussian fit if arrhenius is provided
+    
+    left_col = pn.Column(plot_S)
+    # If the transients are provided, create the plot and append it to the left column
+    if tr is not None:
+        plot_tr = plot_transients(tr,gates=gates, **tr_opts)
+        left_col.append(plot_tr)
+    
+    panel = pn.Row(left_col)
+    
+    ### RIGHT COLUMN ###    
+    if arrhenius is not None and show_arrhenius==True:
+        plot_arr = plot_arrhenius(arr, arr_fit, **arr_opts)
+        
+        right_col= pn.Column(plot_arr, trap_params.interactive())
+        panel.append(right_col)
+    return panel
