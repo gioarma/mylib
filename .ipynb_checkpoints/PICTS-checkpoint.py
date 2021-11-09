@@ -465,7 +465,7 @@ def gaus_fit (df, T_range, fit_window):
     return df_fit
 
 
-def arrhenius_fit (S, T_traps, fit_window, m_eff_rel, exclude_en=None):
+def arrhenius_fit (S, T_traps, fit_window, m_eff_rel, exclude_en=[]):
     '''
     S: dataframe with PICTS signal (columns are rate windows, index is temperature). Alternatively, can be a tuple outputed by picts_2gates/picts_4gates, where the first element is the picts DataFrame.\n
     T_traps: dictionary where the key is the trap name and the value is a list of 2 values indicating the temperature range whewre the corresponding peaks appear\n
@@ -498,8 +498,8 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel, exclude_en=None):
     # Gaussian peak fitting for finding Tm, temperature corresponding to peak max
     fits = {}
     for trap in T_traps:
-        if exclude_en is not None: S = S.drop(S.columns[exclude_en[trap]], axis=1)       # Before fitting, drop the columns that the user wants to exclude
-        fits[trap] = gaus_fit(S, T_range = T_traps[trap], fit_window=fit_window[trap])  # do gaussian fit of all peaks of a certain trap
+        S_to_fit = S.drop(S.columns[exclude_en[trap]], axis=1)       # Before fitting, drop the columns that the user wants to exclude. I create a copy of S (S_to_fit), otherwise I loose some data on my original dataframe
+        fits[trap] = gaus_fit(S_to_fit, T_range = T_traps[trap], fit_window=fit_window[trap])  # do gaussian fit of all peaks of a certain trap
     S_fit = pd.concat(fits, axis=1)                                       # multi-column dataframe with gaussian fits. First level are the traps, second level are the rate windows for each trap
     Tm = S_fit.idxmax().unstack(level=0)                                  # Tm is the T at wich the fit has a maximum. This is a DataFrame with Rate windows as index and trap names as columns
 
@@ -546,14 +546,10 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel, exclude_en=None):
 
 ### PLOTTING + VISUALIZATION ###################################################
 
-def plot_transients (tr, en_visualization = False, t1=None, t2 = None, gates = None, cmap=None, **hvplot_opts):
+def plot_transients (tr, gates = None, cmap=None, **hvplot_opts):
     '''
     Plots the transients with an interactive widget allowing to visualize different temperatures. Returns an hvplot object.\n
     tr: Dataframe with time on index (default name 'Time (s)') and temperatures on columns (default name 'Temperature (K)')\n
-    hvplot_opts: options to be passed to the hvplot() function. They can both overwrite the default options or add new ones\n
-    en_visualization: shows a the transients with overlayed the position of t1 and t2 gates. If True, also t1 and t2 must be specified\n
-    t1: t1 gates corresponding to the plotted spectrum (needed only if en_visualization==True)\n
-    t2: t2 gates corresponding to the plotted spectrum (needed only if en_visualization==True)\n
     gates: numpy array containing rate windows in rows and t1,t2, and optionally t3 and t4, in columns (as returned by picts_2gates and picts_4gates)
     cmap: colormap for the spectrum
     hvplot_opts: hvplot parameters to customize the spectrum plot.
@@ -562,32 +558,19 @@ def plot_transients (tr, en_visualization = False, t1=None, t2 = None, gates = N
     opts = dict(x='Time (s)', y=0, width=700,
                 ylabel = 'Current (A)', color = 'k')
     # Overwrite or add the user specified options to the otpions used to produce the plot
-    for opt in hvplot_opts:
-        opts[opt] = hvplot_opts[opt]
+    for opt in hvplot_opts: opts[opt] = hvplot_opts[opt]
     
     # Overlay rate window visualization if specified
-    if en_visualization == True:
-        if np.shape(gates)[1] == 2: picts_type='2 gates'
-        else: picts_type='4 gates'
-        # 2 gates visualization
-        if (picts_type == '2 gates'):
-            if cmap is None: colormap = hv.Cycle.default_cycles["default_colors"]
-            else: colormap = cm(len(t1), cmap)
-            if gates is not None:            # If the user passed gates, t1 and t2 are gotten from that
-                t1 = gates.T[0]
-                t2 = gates.T[1]
-            lines = hv.Overlay([hv.VLine(x=t1[i]).opts(color=colormap[i])*\
-                                hv.VLine(x=t2[i]).opts(color=colormap[i])\
-                                for i in range(len(t1))])
-        # 4 gates visualization
-        else:
-            if cmap is None: colormap = hv.Cycle.default_cycles["default_colors"]
-            else: colormap = cm(len(t_4gates), cmap)
-            lines = hv.Overlay([hv.VLine(x=t[0]).opts(color=colormap[i])*\
-                                hv.VLine(x=t[1]).opts(color=colormap[i])*\
-                                hv.VLine(x=t[2]).opts(color=colormap[i])*\
-                                hv.VLine(x=t[3]).opts(color=colormap[i])
-                                for i,t in enumerate(gates)])
+    if gates is not None:
+        
+        # Define colormap
+        if cmap is None: colormap = hv.Cycle.default_cycles["default_colors"]
+        else: colormap = cm(gates.shape[0], cmap)
+
+        # Vertical lines corresponding to gate positions
+        lines = hv.Overlay([hv.Overlay([hv.VLine(x=ti).opts(color=colormap[i]) for ti in t]) \
+                            for i,t in enumerate(gates)])
+            
         # Return a pn.interact where the function is a lambda that returns an Overlay of tr and VLines and the variable is
         return pn.interact(lambda Temperature: tr[Temperature].hvplot(**opts)*lines,
                            Temperature=list((tr.columns)))
@@ -619,14 +602,17 @@ def plot_arrhenius(arr, arr_fit=None, **hvplot_opts):
 
 def plot_all(picts, tr=None, arrhenius=None, show_arrhenius=True):
     '''
-    
+    picts: tuple object returned by picts_2gates
+    tr: transients for rate window visualization
+    arrhenius: tuple object returned by arrhenius_fit
+    show_arrhenius: 
     '''
     # Plot options
-    S_opts = dict(width=600, frame_height=300)
+    S_opts = dict(width=600, frame_height=350)
     S_fit_opts = dict(color='red', line_width=1.5)
-    tr_opts = dict(en_visualization=True, width=600,height=300,
+    tr_opts = dict(width=600,height=300,
                    xlim=[0,None])
-    arr_opts = dict(subplots=True, width=350)
+    arr_opts = dict(height=350, width=250, legend=False)
     
     # Get spectrum and gates from picts data
     S = picts[0]
@@ -637,7 +623,7 @@ def plot_all(picts, tr=None, arrhenius=None, show_arrhenius=True):
     
     ### LEFT COLUMN ###    
     # Create the spectrum plot and put it in a column that will be on the left of the final panel
-    if arrhenius is None and show_arrhenius==True: 
+    if show_arrhenius==False: 
         plot_S = S.hvplot(**S_opts)    # Show lines if the gauss fit is not overlayed
     else: plot_S = hv.Overlay(S.hvplot(kind='scatter', size=1, **S_opts)*\
                               hv.Overlay([S_fit[trap].hvplot(**S_fit_opts) for trap in arr.columns])
@@ -653,7 +639,9 @@ def plot_all(picts, tr=None, arrhenius=None, show_arrhenius=True):
     
     ### RIGHT COLUMN ###    
     if arrhenius is not None and show_arrhenius==True:
-        plot_arr = plot_arrhenius(arr, arr_fit, **arr_opts)
+        plot_arr = hv.Layout([plot_arrhenius(arr[trap].dropna(), arr_fit[trap].dropna(), title=trap, **arr_opts)\
+                              .opts(show_legend=False, axiswise=True) \
+                              for trap in arr])
         
         right_col= pn.Column(plot_arr, trap_params.interactive())
         panel.append(right_col)
