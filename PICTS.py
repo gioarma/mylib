@@ -195,6 +195,7 @@ def import_arrhenius(path='arrhenius_data', sample_info_path='sample_info.xlsx')
     # Create new columns
     df['Sample age (days)'] = (df['Date measured']-df['Date growth']).astype('timedelta64[h]')/24   # Age of the sample when measured. We convert it to days otherwise in the plots we get the time in nanoseconds, which is a mess
     df['T range (K)'] = df['T max (K)']-df['T min (K)']   # Age of the sample when measured
+    df['Bias sign'] = np.where(df['Bias (V)']>0, '+','-')
     return df
 
 ###############################################################################################################
