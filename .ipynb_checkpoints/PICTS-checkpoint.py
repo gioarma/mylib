@@ -82,7 +82,7 @@ def read_temp_ramp (path):
 
 
 
-def save_arrhenius (arr, trap_params, sample_name, scan_number, gates_number , 
+def save_arrhenius (arr, sample_name, scan_number, gates_number , trap_params=None,
                     integral=None, measurement_date = None,
                     bias=None, xray_dose=None, excitation_wavelength = None,
                     light_source_current=None, T_min=None, T_max=None, heating_rate=None,
@@ -91,12 +91,13 @@ def save_arrhenius (arr, trap_params, sample_name, scan_number, gates_number ,
     '''
     Saves the arrhenius plots in a csv file for further analysis.
     
-    arr: DataFrame/list of DataFrames. Each DataFrame should contain the arrhenius plots in form of 1000/T as index, ln(T2/en) as columns\n\n
+    arr: tuple returned by arrhenius_fit. Alternatively, DataFrame/list of DataFrames. Each DataFrame should contain the arrhenius plots in form of 1000/T as index, ln(T2/en) as columns\n\n
     sample_name: string containing the sample name (use just the code, not any pre-code like 'MAPbBr' or else)\n\n
-    picts_method: string containing the method used to obtain the arrhenius plot. Can be: 2 (2 gates) or 4 (4 gates)\n\n
+    scan_number: number of temperature scan for the sample, if it's the first T scan, then scan_number=1 and so on. \n\n
+    gates_number: number of gates used for obtaining the spectrum (2 or 4).\n\n
+    trap_params: second element returned by arrhenius_fit. This has to be passed if arr is a DataFrame or list of DataFrames containing just the arrhenius plots with no info on trap parameters.\n\n
     integral: bool saying if the picts method was standard (integral=False) or integral (integral=True)\n\n
     measurement date: string containing the measurement date expressed as 'dd/mm/yyyy'. \n\n
-    scan_number: number of temperature scan for the sample, if it's the first T scan, then scan_number=1 and so on. \n\n
     bias: bias (in V) applied to the sample during measurement. \n\n
     xray_dose: total X-ray dose (in Gy) delivered to the sample. \n\n 
     excitation_wavelength: wavelength (in nm) of the light source. \n\n 
@@ -108,21 +109,25 @@ def save_arrhenius (arr, trap_params, sample_name, scan_number, gates_number ,
     append_current_time: whether you want to append to the end of the file name the date of when the file was saved. This allows to avoid overwriting when you save twice a file with the same parameters.\n
     '''
 
-    if isinstance(arr, list):
-        for df in arr: 
-            if len(arr) != len(trap_params):   # Check that arr and trap_params contain the same number of elements
-                raise ValueError("arr list and trap_params lists do not have the same size.")
-
     # If user diddn't put / at the end of path, we add it
     if path != '':
         if path[-1] != '/': path = path+'/'
+        
+    # If arr is a list, we check that arr and trap_params contain the same number of elements
+    if isinstance(arr, list): 
+        for df in arr: 
+            if len(arr) != len(trap_params):   
+                raise ValueError("arr list and trap_params lists do not have the same size.")
     
     # If arr is a single df, we put it into a 1-element list 
     if isinstance(arr, pd.DataFrame):
         arr = [arr]
     if isinstance(trap_params, pd.DataFrame):
         trap_params = [trap_params]
-    
+    # If arr is a tuple returned by arrhenius_fit, we extract from it the parameters we need to export
+    if isinstance(arr, tuple):
+        trap_params = [arr[3]]
+        arr = [arr[0]]
     # Get current time expressed from year to seconds
     current_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     # Create full path + file name
@@ -600,7 +605,7 @@ def plot_arrhenius(arr, arr_fit=None, **hvplot_opts):
 
 
 
-def plot_all(picts, tr=None, arrhenius=None, show_arrhenius=True):
+def plot_all(picts, arrhenius=None, tr=None, show_arrhenius=True):
     '''
     picts: tuple object returned by picts_2gates
     tr: transients for rate window visualization
@@ -620,7 +625,8 @@ def plot_all(picts, tr=None, arrhenius=None, show_arrhenius=True):
     # Get all components from arrhenius data
     if arrhenius is not None:
         arr, arr_fit, S_fit, trap_params = arrhenius
-    
+    else:  # If the arrhenius parameter is not passed, we won't show the arrhenius plot
+        show_arrhenius=False
     ### LEFT COLUMN ###    
     # Create the spectrum plot and put it in a column that will be on the left of the final panel
     if show_arrhenius==False: 
