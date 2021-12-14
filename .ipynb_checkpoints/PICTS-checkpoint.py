@@ -176,7 +176,9 @@ def import_arrhenius(path='arrhenius_data', sample_info_path='sample_info.xlsx')
     
     ## Concatenate all data in a single DataFrame
     arr = pd.concat([pd.read_csv(f) for f in file_list ])
+    # Fix some columns that are not read correctly 
     arr['Sample name'] = arr['Sample name'].astype(str)      # convert sample name to string, since it can be seen as an integer by read_csv and create problems when joining dataframes afterwards
+    arr['Number of gates'] = arr['Number of gates'].astype(str)   # More convenient for plots and panels
     # We convert this into a multiindex dataframe so that we can join it with sample_info after. We have to do this because arr and sample_info do not have the same amount of rows for each sample (sample_info has only 1 row for each sample)
     arr['count'] = arr.groupby('Sample name').cumcount()        # Create a count column, which is the inner level of the multiindex. It's simply a count of each repetition of Sample name
     arr.set_index(['Sample name','count'], inplace=True)        # The outer level of the multiindex is Sample name
@@ -193,6 +195,7 @@ def import_arrhenius(path='arrhenius_data', sample_info_path='sample_info.xlsx')
     # Create new columns
     df['Sample age (days)'] = (df['Date measured']-df['Date growth']).astype('timedelta64[h]')/24   # Age of the sample when measured. We convert it to days otherwise in the plots we get the time in nanoseconds, which is a mess
     df['T range (K)'] = df['T max (K)']-df['T min (K)']   # Age of the sample when measured
+    df['Bias sign'] = np.where(df['Bias (V)']>0, '+','-')
     return df
 
 ###############################################################################################################
