@@ -108,7 +108,6 @@ def save_arrhenius (arr, sample_name, scan_number, gates_number , trap_params=No
     path: path where to save the data. If not specified, the csv is saved in the working directory. \n\n
     append_current_time: whether you want to append to the end of the file name the date of when the file was saved. This allows to avoid overwriting when you save twice a file with the same parameters.\n
     '''
-
     # If user diddn't put / at the end of path, we add it
     if path != '':
         if path[-1] != '/': path = path+'/'
@@ -353,7 +352,8 @@ def picts_2gates (tr, beta, t_avg, t1_min=None, t1_method='linear',
 
 
 def picts_4gates (tr, alpha, beta, t_avg, t1_min=None, t1_method='linear', 
-                  t1_shift=None, n_windows=None, gamma=None, t1=None, t4=None, integrate = False, round_en = None):
+                  t1_shift=None, n_windows=None, gamma=None, t1=None, t4=None, 
+                  integrate = False, round_en = None):
     '''
     tr: dataframe with transients at different temperatures\n
     t1_min: minimum value of t1. Necessary if t1 is not provided\n
@@ -395,7 +395,7 @@ def picts_4gates (tr, alpha, beta, t_avg, t1_min=None, t1_method='linear',
     # Check that no gate exceeds the maximum time index of the data
     for i,t in enumerate(gates):
         if (t>tr.index.max()).any():      # If any value in t is bigger than the maximum time of the transients
-            raise ValueError(f"These t{i+1} values are bigger than the highest value of the transient time index:\n {t} \n Adjust the input parameters accordingly")
+            raise ValueError(f"These gate values in this list are bigger than the highest value of the transient time index:\n {t} \n Adjust the input parameters accordingly")
     # Find index location of the gates so that later we can use iloc for defining time ranges
     gates_loc = np.array([np.array([tr.index.get_loc(t, method='backfill') for t in gate]) for gate in gates])
     # Calculate rate windows
@@ -481,8 +481,7 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel, exclude_en=[]):
                 the curve maximum is located. E.g. max of a rate window is found at 200K and fit_window=10, then we just fit from 190K
                 to 210K.\n
     m_eff_rel: relative effective mass i.e. the dimensionless quantity m_eff/m_e, where m_e is the electronic mass.\n
-    exclude_en: list of int indicating which rate windows not to consider in the gaussian fit of the peaks.
-                Integers should be numbers from 0 to n_windows-1. 
+    exclude_en: list of int or dictionary of lists of int. The list indicates which rate windows not to consider in the gaussian fit of the peaks. Integers should be numbers from 0 to n_windows-1. 
                 It can also be a dictionary where keys must be the same as the ones of T_traps
                 and the values should be lists indicating the ens to exclude for each trap.
 
