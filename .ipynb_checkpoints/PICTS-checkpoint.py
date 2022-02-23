@@ -59,8 +59,8 @@ def read_transients (path, amplifier_gain=1, dropna=False, set_timetrack = True,
     if drop is not None: df = df.drop(axis=1, columns = df.columns[drop[0]:drop[1]])
 
     # Temperature values
-    df.columns = [float(temp.replace('wf_','')) for temp in df.columns]
     if sep != '.': df.columns = [temp.replace(sep, '.') for temp in df.columns]
+    df.columns = [float(temp.replace('wf_','')) for temp in df.columns]
     df.columns.name = 'Temperature (K)'
 
     # Current values
