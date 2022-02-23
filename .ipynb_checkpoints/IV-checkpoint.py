@@ -1,5 +1,7 @@
 import pandas as pd
 import re
+from lmfit.models import LinearModel
+from mylib.utils import fit_df
 
 def Read_IV_Data_Probestation (data, keyword = None, zero_start = False):
 
@@ -72,4 +74,18 @@ def Read_IV_Data_Probestation (data, keyword = None, zero_start = False):
 def Read_IV_Data_IV2012LabView (path):
     df = pd.read_csv(path, sep='\t', index_col='V')
     df.columns = [path]
+    df = df[~df.index.duplicated(keep='first')]        # Delete rows with duplicate index. The LV software sometimes saves an additional point with the last voltage value
     return df
+
+
+
+def fit_IV (IV, resistance = True):
+    
+    IV_fit, params = fit_df(IV, model='linear')
+    R = pd.Series(index = IV.columns, 
+                  data = [1/param['slope'].value for param in params.values()])
+    #IV_fit.columns.names=IV.columns.names
+    
+    if resistance: return IV_fit, R
+    else: return IV_fit
+    
