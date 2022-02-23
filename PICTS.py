@@ -36,7 +36,7 @@ m_e = physical_constants['electron mass'][0]
 
 ####### DATA IMPORT/EXPORT  #######################################################################
 
-def read_transients (path, amplifier_gain=1, dropna=False, set_timetrack = True, drop=None):
+def read_transients (path, amplifier_gain=1, dropna=False, set_timetrack = True, drop=None, sep='.'):
 
     '''
     path: string with file path of TDMS file
@@ -45,7 +45,8 @@ def read_transients (path, amplifier_gain=1, dropna=False, set_timetrack = True,
     time_scale: Order of magnitude of the times to scale the data (e.g. 1e-6 sets values to µA). Set 1 to leave as measured
     dropna: whether to drop all rows where there is at least one NaN. Useful for faulty dataset where there are some columns with more data than others
     set_timetrack: whether to get the timetrack from the files. In some corrupted data it is better to avoid it
-    drop: list of 2 integers indicating the initial and final columns to be dropped from the dataframe as soon as it is imported. Usually used to remove the first or last columns which may contain corrupted data. If drop=[0,5] drop the first 2 columns
+    drop: list of 2 integers indicating the initial and final columns to be dropped from the dataframe as soon as it is imported. Usually used to remove the first or last columns which may contain corrupted data. If drop=[0,5] drop the first 2 columns\n
+    sep: string indicating decimal separator for temperature values in case it is not the standard dot.\n
     '''
 
     if '.pkl' in path: return pd.read_pickle(path,'bz2')   # If transient is passed as compressed pickle file as returned by save_transients
@@ -59,6 +60,7 @@ def read_transients (path, amplifier_gain=1, dropna=False, set_timetrack = True,
 
     # Temperature values
     df.columns = [float(temp.replace('wf_','')) for temp in df.columns]
+    if sep != '.': df.columns = [temp.replace(sep, '.') for temp in df.columns]
     df.columns.name = 'Temperature (K)'
 
     # Current values
