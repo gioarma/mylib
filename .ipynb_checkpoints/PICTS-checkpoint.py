@@ -460,8 +460,8 @@ def picts_2gates (tr, beta, t_avg, t1_min=None, t1_method='linear',
     if (t2>tr.index.max()).any():      # If any value in t2 is bigger than the maximum time of the transients
         raise ValueError('Some t2 values are bigger than the highest value of the transient time index. Adjust your t1 and beta accordingly.')
 
-    t1_loc = np.array([tr.index.get_loc(t, method = 'backfill') for t in t1])    # location of t1 values. needed for using iloc later since loc has problems with tolerance
-    t2_loc = np.array([tr.index.get_loc(t, method = 'backfill') for t in t2])    # location of t2 vcalues
+    t1_loc = np.array([tr.index.get_indexer([t], method = 'backfill')[0] for t in t1])    # location of t1 values. needed for using iloc later since loc has problems with tolerance
+    t2_loc = np.array([tr.index.get_indexer([t], method = 'backfill')[0] for t in t2])    # location of t2 vcalues
     # Calculate rate windows
     #en = np.log(beta)/(t1*(beta-1))
     en = calculate_en(t1 = t1, t2 = beta*t1, injection=injection)
@@ -526,7 +526,7 @@ def picts_4gates (tr, alpha, beta, t_avg, t1_min=None, t1_method='linear',
         if (t>tr.index.max()).any():      # If any value in t is bigger than the maximum time of the transients
             raise ValueError(f"These gate values in this list are bigger than the highest value of the transient time index:\n {t} \n Adjust the input parameters accordingly")
     # Find index location of the gates so that later we can use iloc for defining time ranges
-    gates_loc = np.array([np.array([tr.index.get_loc(t, method='backfill') for t in gate]) for gate in gates])
+    gates_loc = np.array([np.array([tr.index.get_indexer([t], method='backfill')[0] for t in gate]) for gate in gates])
     # Calculate rate windows
     en = np.array([np.log((t[2]-t[0])/(t[1]-t[0])) / (t[2]-t[1]) for t in gates])
 
@@ -632,15 +632,15 @@ def gaus_fit (df, T_range, fit_window, return_Tm=False, outlier_window=None, out
     a copy dataframe of df with gaussian fits
 
     '''
-    # Check if index is monotonic, otherwise get_loc won't work
+    # Check if index is monotonic, otherwise get_indexer won't work
     if not df.index.is_monotonic:
         df = df.sort_index(ascending=True)        # Sort index ascendingly
         df = df[~df.index.duplicated(keep='first')]  # Delete rows with duplicates if there are any
         warnings.warn("The index of the dataframe is not monotonic, therefore the fitting function cannot work properly. I sorted the index and deleted duplicate index elements, please check that this operation is ok with your specific dataframe.",
         stacklevel=2)
         
-    T_min_loc = df.index.get_loc(T_range[0], method='pad')    # Find position of Tmin and Tmax with tolerance for using iloc later
-    T_max_loc = df.index.get_loc(T_range[1], method='backfill')
+    T_min_loc = df.index.get_indexer([T_range[0]], method='pad')[0]    # Find position of Tmin and Tmax with tolerance for using iloc later
+    T_max_loc = df.index.get_indexer([T_range[1]], method='backfill')[0]
     df = df.iloc[T_min_loc: T_max_loc+1]                             # Restrinct dataframe only to desidred T range
     if outlier_window is not None and outlier_threshold is not None:
         df = remove_outliers(df, outlier_window, outlier_threshold)
@@ -652,8 +652,8 @@ def gaus_fit (df, T_range, fit_window, return_Tm=False, outlier_window=None, out
     for i,rate in enumerate(df):                                         # loop thorugh rate windows
         T_min_fit = max(max_pos[rate] - fit_window, T_range[0])          # T min considering fit window. If the result is lower than the global T_min, we consider T_min instead
         T_max_fit = min(max_pos[rate] + fit_window, T_range[1])          # Same as for T_min
-        T_min_fit_loc = df.index.get_loc(T_min_fit, method='backfill')   # location of the previous values for use of iloc
-        T_max_fit_loc = df.index.get_loc(T_max_fit, method='backfill')
+        T_min_fit_loc = df.index.get_indexer([T_min_fit], method='backfill')[0]   # location of the previous values for use of iloc
+        T_max_fit_loc = df.index.get_indexer([T_max_fit], method='backfill')[0]
         # Fitting
         y = df.iloc[T_min_fit_loc:T_max_fit_loc, i].dropna().values
         x = df.iloc[T_min_fit_loc:T_max_fit_loc, i].dropna().index.values
