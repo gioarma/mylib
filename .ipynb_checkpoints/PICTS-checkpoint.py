@@ -465,10 +465,11 @@ def picts_2gates (tr, beta, t_avg, t1_min=None, t1_method='linear',
     # Calculate rate windows
     #en = np.log(beta)/(t1*(beta-1))
     en = calculate_en(t1 = t1, t2 = beta*t1, injection=injection)
-    # Calculate picts signal for each rate window taking the average of the current around t1 and t2 based on t_avg
+    # Calculate picts signal for each rate window taking the integral of the current between t1 and t2 
     if integrate:
         picts = pd.concat([tr.iloc[t1:t2].apply(lambda x: scipy.integrate.trapz(x, tr.iloc[t1:t2].index)) \
                            for t1,t2 in zip(t1_loc,t2_loc) ], axis=1)
+    # Calculate picts signal for each rate window taking the average of the current around t1 and t2 based on t_avg
     else:
         picts = pd.concat([tr.iloc[t1-t_avg:t1+t_avg].mean() - tr.iloc[t2-t_avg:t2+t_avg].mean() \
                            for t1,t2 in zip(t1_loc,t2_loc)], axis=1)
@@ -551,7 +552,7 @@ def picts_4gates (tr, alpha, beta, t_avg, t1_min=None, t1_method='linear',
 
 def picts_map (tr, t1_min, beta, t_avg, t1_shift, n_windows = None,
                alpha=None, gamma=None, integrate = False, round_en = None, 
-               t1_shift_method='exp', injection = 'high'):
+               t1_shift_method='exp', injection = 'high', line_normalize = False):
     '''
     tr: dataframe with transients at different temperatures\n
     t1_min: minimum value of t1. Necessary if t1 is not provided\n
@@ -565,7 +566,8 @@ def picts_map (tr, t1_min, beta, t_avg, t1_shift, n_windows = None,
     t1_shift_method: method used to create t1 values. Currently accepted options are 'exp' and 'linear' (linearly increase the t1 values)
     round_en: integer indicating how many decimals the rate windows should should be rounded to. If None, the default calculated values of en are kept.\n
     injection: can be either "high" (default) or "low", corresponding to high or low injection from the light source. The expression for finding en in the case of 2 gates PICTS is different in the 2 cases. \n
-
+    line_normalize: Each line of the map is normalized so that the max intensity is set to 1. This can allow to see better some hidden features, but can also introduce artefacts, like horizontal and vertical lines. Always compare a normalized map with the non-normalized one.
+    
     Calculates the "3D Arrhenius plot", i.e. the PICTS spectrum over a large number of rate windows
     '''
     
@@ -594,7 +596,8 @@ def picts_map (tr, t1_min, beta, t_avg, t1_shift, n_windows = None,
         S, gates = picts_4gates(tr, t1=t1, alpha=alpha, beta=beta, gamma=gamma, 
                                    t_avg=t_avg, integrate=integrate)
         
-    S_stack = S/S.max()     # Normalize all spectra to the max so that they have the same intensity
+    if line_normalize: S_stack = S/S.max()     # Normalize all spectra to the max so that they have the same intensity
+    else: S_stack = S
     S_stack.columns = np.log(S.columns)    # Convert en to log(en) for better visualization
     S_stack.index = 1000/S_stack.index     # Convert T to 1000/T
     S_stack=S_stack.stack().swaplevel()    #stack index and swap T and en indices. Operation needed to convert it into a DataArray easily
@@ -868,21 +871,26 @@ def plot_transients (tr, gates = None, cmap=None, **hvplot_opts):
 
     
     
-def plot_arrhenius(arr, arr_fit=None, suffix='', **hvplot_opts):
+def plot_arrhenius(arr, arr_fit=None, suffix='', drop=None, **hvplot_opts):
     '''
     Plots the arrhenius data with the correct x and y labels
-    arr: Series, Dataframe or tuple of DataFrames (as returned by arrhenius_fit) with 1000/T as index and ln(en/T^2) values on the columns. Each column should represent a different trap
-    arr_fit: Same structure as arr, should contain the fit of the corresponding arrhenius lines.
-    suffix: string with text to be added to all the legend items. Useful when doing overlays of different plot_arrhenius() outputs with the same labels (e.g. two consecutive scans where one sees the same trap)
+    arr: Series, Dataframe or tuple of DataFrames (as returned by arrhenius_fit) with 1000/T as index and ln(en/T^2) values on the columns. Each column should represent a different trap.\n\n
+    arr_fit: Same structure as arr, should contain the fit of the corresponding arrhenius lines.\n\n
+    suffix: string with text to be added to all the legend items. Useful when doing overlays of different plot_arrhenius() outputs with the same labels (e.g. two consecutive scans where one sees the same trap).\n\n
+    drop: list of trap names that you don't want to appear in the plot.
     hvplot_opts: options to be passed to hvplot plotting library
     '''
     if isinstance(arr, tuple): arr, arr_fit = arr[0].copy(), arr[1].copy()
     if isinstance(arr, pd.Series): arr = arr.to_frame()
     # Default plotting options
-    opts = dict(kind='scatter', ylabel='ln(T²/en)', xlabel='1000/T (K⁻¹)',
+    opts = dict(ylabel='ln(T²/en)', xlabel='1000/T (K⁻¹)',
                 hover_cols=['T (K)', 'en (Hz)', 'ln(en)'])
     # Overright or add options, if needed
     for key, value in hvplot_opts.items(): opts[key]=value
+    # Drop unwanted traps, so that they won't be plotted
+    if drop is not None: 
+        arr = arr.drop(columns=drop).dropna(how='all')
+        arr_fit = arr_fit.drop(columns=drop).dropna(how='all')
     if suffix!= '':
         arr.columns += suffix      # add suffix to the arr columns
         arr_fit.columns += suffix      # add suffix to the arr_fit columns
@@ -891,7 +899,7 @@ def plot_arrhenius(arr, arr_fit=None, suffix='', **hvplot_opts):
     arr['T (K)'] = 1000/arr.index
     arr['en (Hz)'] = arr['T (K)']**2/np.exp(pd.concat([arr[trap] for trap in traps]).dropna().values)
     arr['ln(en)'] = np.log(arr['en (Hz)'])
-    plot = arr.hvplot(y=traps, **opts)
+    plot = arr.hvplot(y=traps, kind='scatter', **opts)
     if arr_fit is not None:
         plot = plot*arr_fit.hvplot(color='red', hover=False)
     return plot
