@@ -800,7 +800,7 @@ def map_fit (S, T_range, log_en_range, n_points, fit_window, m_eff_rel, exclude_
                                 outlier_window=outlier_window, outlier_threshold=outlier_threshold
                          )
         except RuntimeError: 
-            print("The gaussian fitting of the peaks failed for trap %s. These are the spectra you gave as input as well and the temperature range values as vertical blue lines:\n" % (trap,))
+            print("The gaussian fitting of the peaks failed for trap %s. These are the input spectra and the temperature range values for this trap as vertical blue lines:\n" % (trap,))
             plt.plot(s_to_fit)
             plt.axvline(x=T_range[trap][0], c='b', linestyle='--')
             plt.axvline(x=T_range[trap][1], c='b', linestyle='--')
@@ -871,13 +871,14 @@ def plot_transients (tr, gates = None, cmap=None, **hvplot_opts):
 
     
     
-def plot_arrhenius(arr, arr_fit=None, suffix='', drop=None, **hvplot_opts):
+def plot_arrhenius(arr, arr_fit=None, suffix='', drop=None, show_fit=True, **hvplot_opts):
     '''
     Plots the arrhenius data with the correct x and y labels
     arr: Series, Dataframe or tuple of DataFrames (as returned by arrhenius_fit) with 1000/T as index and ln(en/T^2) values on the columns. Each column should represent a different trap.\n\n
     arr_fit: Same structure as arr, should contain the fit of the corresponding arrhenius lines.\n\n
     suffix: string with text to be added to all the legend items. Useful when doing overlays of different plot_arrhenius() outputs with the same labels (e.g. two consecutive scans where one sees the same trap).\n\n
-    drop: list of trap names that you don't want to appear in the plot.
+    drop: list of trap names that you don't want to appear in the plot.\n\n
+    show_fit: whether to show or not the arrhenius fit on top of the scatter points.\n\n
     hvplot_opts: options to be passed to hvplot plotting library
     '''
     if isinstance(arr, tuple): arr, arr_fit = arr[0].copy(), arr[1].copy()
@@ -900,7 +901,7 @@ def plot_arrhenius(arr, arr_fit=None, suffix='', drop=None, **hvplot_opts):
     arr['en (Hz)'] = arr['T (K)']**2/np.exp(pd.concat([arr[trap] for trap in traps]).dropna().values)
     arr['ln(en)'] = np.log(arr['en (Hz)'])
     plot = arr.hvplot(y=traps, kind='scatter', **opts)
-    if arr_fit is not None:
+    if arr_fit is not None and show_fit==True:                  # Have to check for both conditions, show the fit if the fit itself exists and if the user wants to show it
         plot = plot*arr_fit.hvplot(color='red', hover=False)
     return plot
 
