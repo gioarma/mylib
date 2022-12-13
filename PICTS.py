@@ -50,7 +50,7 @@ def read_transients (path, amplifier_gain=1, dropna=False, set_timetrack = True,
     '''
 
     if '.pkl' in path: return pd.read_pickle(path,'bz2')   # If transient is passed as compressed pickle file as returned by save_transients
-    
+
     tdms_file = TdmsFile.read(path)
     df = tdms_file['Measured Data'].as_dataframe()    # convert the 'Measured Data' group to a dataframe with all transients
 
@@ -84,7 +84,7 @@ def save_transients (tr, path):
     The bz2 compression seems to have the best compromise between file size, read time and write time.\n\n
     tr: Dataframe to be exported\n\n
     path: string containing path/file_name where to save the file.
-    '''  
+    '''
     if '.pkl' not in path:  path += '.pkl'         # Add format, if not already written by the user
     return tr.to_pickle(path, compression='bz2')
 
@@ -105,15 +105,17 @@ def read_temp_ramp (path):
 
 
 
-def save_arrhenius (arr, sample_name, scan_number, gates_number , trap_params=None,
+def save_arrhenius (arr, sample_name, path = '',
+                    scan_number=None, gates_number=None , trap_params=None,
                     integral=None, measurement_date = None,
                     bias=None, xray_dose=None, excitation_wavelength = None,
+                    atmosphere=None, excitation_time=None,
                     light_source_current=None, T_min=None, T_max=None, heating_rate=None,
-                    path = '', append_current_time=False, comment=''):
-    
+                    append_current_time=False, comment=''):
+
     '''
     Saves the arrhenius plots in a csv file for further analysis.
-    
+
     arr: tuple returned by arrhenius_fit. Alternatively, DataFrame/list of DataFrames. Each DataFrame should contain the arrhenius plots in form of 1000/T as index, ln(T2/en) as columns\n\n
     sample_name: string containing the sample name (use just the code, not any pre-code like 'MAPbBr' or else)\n\n
     scan_number: int indicating the number of temperature scan for the sample, if it's the first T scan, then scan_number=1 and so on. \n\n
@@ -122,58 +124,70 @@ def save_arrhenius (arr, sample_name, scan_number, gates_number , trap_params=No
     integral: bool saying if the picts method was standard (integral=False) or integral (integral=True)\n\n
     measurement date: string containing the measurement date expressed as 'dd/mm/yyyy'. \n\n
     bias: bias (in V) applied to the sample during measurement. \n\n
-    xray_dose: total X-ray dose (in Gy) delivered to the sample. \n\n 
-    excitation_wavelength: wavelength (in nm) of the light source. \n\n 
+    xray_dose: total X-ray dose (in Gy) delivered to the sample. \n\n
+    excitation_wavelength: wavelength (in nm) of the light source. \n\n
+    atmosphere: atmosphere in which the measurement was performed (could be air, vacuum, ...). \n\n
+    excitation_time: time duration of the light pulse in seconds. \n\n
     light_source_current: current (in mA) flowing through the LED/LASER. \n\n
-    T_min: minimum temperature (in K) reached during the scan.
-    T_max: maximum temperature (in K) reached during the scan.
-    heating_rate: heating rate (in K/min) of the scan.
+    T_min: minimum temperature (in K) reached during the scan. \n\n
+    T_max: maximum temperature (in K) reached during the scan. \n\n
+    heating_rate: heating rate (in K/min) of the scan. \n\n
     path: path where to save the data. If not specified, the csv is saved in the working directory. \n\n
-    append_current_time: whether you want to append to the end of the file name the date of when the file was saved. This allows to avoid overwriting when you save twice a file with the same parameters.\n
-    comment: string with any kind of additional info to be appended to the file name
+    append_current_time: whether you want to append to the end of the file name the date of when the file was saved. This allows to avoid overwriting when you save twice a file with the same parameters.\n\n
+    comment: string with any kind of additional info to be appended to the file name.\n
     '''
     # If user diddn't put / at the end of path, we add it
     if path != '':
         if path[-1] != '/': path = path+'/'
-        
+
     # If arr is a list, we check that arr and trap_params contain the same number of elements
-    if isinstance(arr, list): 
-        if trap_params is not None: 
+    if isinstance(arr, list):
+        if trap_params is not None:
             if len(arr) != len(trap_params): raise ValueError("arr list and trap_params lists do not have the same size.")
-        
+
         if isinstance(arr[0], tuple):    # if a list of tuples is passed. This is the case of when several outputs from arrhenius_fit or map_fit are passed
-            params, arrs = [], []        # lists that will be filled with the tuple elements and then assigned to trap_params and arrs. 
-            for a in arr:               
+            params, arrs, fits = [], []        # lists that will be filled with the tuple elements and then assigned to trap_params and arrs.
+            for a in arr:
                 params.append(a[3])
                 arrs.append(a[0])
-            trap_params = params 
+                fits.append(a[1])
+            trap_params = params
             arr = arrs
-                
-    # If arr is a single df, we put it into a 1-element list 
+            fit = fits
+
+    # If arr is a single df, we put it into a 1-element list
     if isinstance(arr, pd.DataFrame):
         arr = [arr]
     if isinstance(trap_params, pd.DataFrame):
         trap_params = [trap_params]
     # If arr is a tuple returned by arrhenius_fit, we extract from it the parameters we need to export
     if isinstance(arr, tuple):
+        fit = [arr[1]]
         trap_params = [arr[3]]
         arr = [arr[0]]
     # Get current time expressed from year to seconds
     current_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     # Create full path + file name
-    filename = path + 'arrhenius_' + sample_name + '_Scan'+ str(scan_number) + '_' + str(gates_number) + 'gates'
+    filename = path + 'arrhenius_' + sample_name
+    if scan_number is not None: filename += '_Scan'+ str(scan_number)
+    if gates_number is not None: filename += str(gates_number) + 'gates'
     if integral: filename+='_integral'
-    else: filename+='_standard'
     if append_current_time: filename += '_'+current_time
     if comment != '': filename += '_'+comment
     filename+='.csv'
-    
+
     arr_stacked = [a.stack().reset_index(0).rename(columns={0:'ln(T²/en)'}) for a in arr]     # Create a df with default index and 3 columns: 1000/T, Trap name and ln(ln(T²/en))
     arr_all = pd.concat(arr_stacked, axis=0)  # concatenate all arr vertically
     trap_params_stacked = [t.T for t in trap_params]
     trap_params_all = pd.concat(trap_params_stacked)   # concatenate all arr vertically
+    fit_stacked = [f.stack().reset_index(0).rename(columns={0:'ln(T²/en) fit'}).drop('1000/T (K⁻¹)', axis=1) for f in fit]
+    fit_all = pd.concat(fit_stacked, axis=0)  # concatenate all fits vertically
     
-    df = arr_all.join(trap_params_all)
+    # create dataframe that will be exported, joining the data, the fits and the parameters
+    df = pd.concat([arr_all, fit_all], axis=1)
+    df = df.join(trap_params_all)
+    #df = df.drop('1000/T (K⁻¹) fit', axis=1)      # drop 1000/T fit, which is the same as 1000/T
+    print(df)
     # Change formatting of some column names so that it's easier to work on the dataframe later
     df = df.rename(columns = {
         'Eₐ (eV)': 'Ea (eV)',
@@ -181,60 +195,57 @@ def save_arrhenius (arr, sample_name, scan_number, gates_number , trap_params=No
         'σ (cm²)': 'sigma (cm2)',
         'δσ (cm²)': 'dsigma (cm2)'
     })
-    # Add other info to the dataframe:
-    df['Date saved'] = current_time
-    df['Date measured'] = measurement_date
-    df['Sample name'] = sample_name
-    df['Number of gates'] = gates_number
-    df['Integral'] = integral
-    df['Scan number'] = scan_number
-    df['X-ray dose (Gy)'] = xray_dose
-    df['Bias (V)'] = bias
-    df['Excitation wavelength (nm)'] = excitation_wavelength
-    df['Light source current (mA)'] = light_source_current
-    df['T min (K)'] = T_min
-    df['T max (K)'] = T_max
-    df['Heating rate (K/min)'] = heating_rate
+    # Add other info to the dataframe
+    # First create a dictionary where we specify the column name for each piece of information
+    df_info = {'Date saved': current_time, 'Date measured': measurement_date, 'Sample name': sample_name,
+               'Number of gates': gates_number, 'Integral': integral, 'Scan number': scan_number,
+               'X-ray dose (Gy)': xray_dose, 'Bias (V)': bias, 'Excitation wavelength (nm)': excitation_wavelength,
+               'Light source current (mA)': light_source_current, 'T min (K)': T_min, 'T max (K)': T_max,
+               'Heating rate (K/min)': heating_rate, 'Atmosphere': atmosphere, 'Excitation time (s)': excitation_time}
+    # Then save each info in a column
+    for key in df_info:
+        df[key] = df_info[key]
+    df.index.name='Trap name'
     # Save the csv file
     df.to_csv(filename)
-    
+
 
 def import_arrhenius(path, sample_info_path=None):
-    
+
     '''
     Imports the arrhenius plot data, getting all the sample information from the file name and from the excel file with further info on the samples\n\n
-    
+
     path: string containing the path to the folder where the csv files f the arrhenius plots are stored.\n\n
     sample_info_path: string containing the path to the excel file that contains all the additional info on the samples
-    
-    '''    
+
+    '''
     if path[-1]!='/': path += '/'
     file_list=natsorted(glob.glob(path+'arr*'))  # Find all files in the folder
-    
+
     ## Concatenate all data in a single DataFrame
     arr = pd.concat([pd.read_csv(f) for f in file_list ])
-    # Fix some columns that are not read correctly 
+    # Fix some columns that are not read correctly
     arr['Sample name'] = arr['Sample name'].astype(str)      # convert sample name to string, since it can be seen as an integer by read_csv and create problems when joining dataframes afterwards
     arr['Number of gates'] = arr['Number of gates'].astype(str)   # More convenient for plots and panels
     # We convert this into a multiindex dataframe so that we can join it with sample_info after. We have to do this because arr and sample_info do not have the same amount of rows for each sample (sample_info has only 1 row for each sample)
     arr['count'] = arr.groupby('Sample name').cumcount()        # Create a count column, which is the inner level of the multiindex. It's simply a count of each repetition of Sample name
     arr.set_index(['Sample name','count'], inplace=True)        # The outer level of the multiindex is Sample name
-    # Adjust arr columns 
+    # Adjust arr columns
     arr['Date measured'] = pd.to_datetime(arr['Date measured'], dayfirst=True)   # Convert measurement date in datetime format
-    
+
     if sample_info_path is not None:
         ## Get other info from the excel file
         sample_info = pd.read_excel(sample_info_path, engine='openpyxl', index_col='Sample name')
         sample_info.index = sample_info.index.astype(str)       # On excel the sample name may be considered as a int instead of a string if there are no letters in the name, so we convert it to string
-        
+
         df = arr.join(sample_info).reset_index().drop('count', axis=1)   # joining the two dfs, then resetting index and dropping count (I needed them just to perferm the join smoothly)
         df = df.rename(columns={'Unnamed: 0': 'Trap'})  # Trap column was unnamed from read csv, so we give it a name here
         df['Sample age (days)'] = (df['Date measured']-df['Date growth']).astype('timedelta64[h]')/24   # Age of the sample when measured. We convert it to days otherwise in the plots we get the time in nanoseconds, which is a mess
-    else: 
+    else:
         df = arr
-    
+
     # Create new columns
-    df['T range (K)'] = df['T max (K)']-df['T min (K)']   # Age of the sample when measured
+    df['T range (K)'] = df['T max (K)']-df['T min (K)']   # Temperature span
     df['Bias sign'] = np.where(df['Bias (V)']>0, '+','-')
     return df
 
@@ -251,15 +262,15 @@ def save_map (S, path, sample_name, gates_number, integral, scan_number, comment
     scan_number: int indicating the number of temperature scans for the sample, if it's the first T scan, then scan_number=1 and so on. \n
     comment: string with any kind of additional info to be appended to the file name
     '''
-    
+
     if path[-1] != '/': path+='/'
     path = path + '/' + 'map_' + sample_name + '_Scan' + str(scan_number) + '_' + str(gates_number) + 'gates'
     if not isinstance(integral,bool): raise TypeError("integral keyword must be of boolean type.")
     if integral : path += '_integral'
     else: path += '_standard'
     if comment != '': path += '_'+comment
-    path += '.nc'         # Add format, if not already written by the user
-    return S.to_netcdf(path) 
+    path += '.nc'         # Add format
+    return S.to_netcdf(path)
 
 
 def import_map (path):
@@ -282,7 +293,7 @@ def import_map (path):
 def drop_T (tr, T_list):
     '''
     Delete desired temperature columns from transient dataframe\n\n
-    
+
     tr: dataframe containing current transients with time as index and temperature as columns.\n\n
     T_list: list of int/lists containing temperature values to be removed. If int, the specific temperature is dropped. If list it has to contain 2 values and all temperatures between these two values are dropped.
     '''
@@ -320,22 +331,22 @@ def create_t1_values (t1_min, t1_shift, n_windows = None, tr = None, multiplier 
     n_windows: nuber of rate windows, i.e. number of t1 values of the returned array. If it's not passed, the max number of windows for the transient is automatically generated. In this case, tr needs to be passed. \n
     tr: Dataframe containing the transients. Has to be passed if n_windows is None, i.e. if the max number of rate windows is automatically generated.\n
     multiplier: should be beta in the case of 2 gates and gamma for 4 gates. Needs to be passed only if n_windows is None.\n
-    method: accepted options are 'linear' (linearly increase the t1 values) \n\n
+    method: accepted options are 'linear' (linearly increase the t1 values), and 'exp' (exponentially increase the t1 values) \n\n
     Returns:
     numpy array with all t1 values.
     '''
     # Determine if the t1 values will automatically generated (auto) or not (user)
     if n_windows is None: mode = 'auto'
     else: mode = 'user'
-    
-    if mode == 'user':    
+
+    if mode == 'user':
         if method == 'linear':
-            t1 =  np.array([t1_min+t1_shift*i for i in range(n_windows)])        
+            t1 =  np.array([t1_min+t1_shift*i for i in range(n_windows)])
         elif method == 'exp':
-            t1 = np.array([t1_min*np.exp(t1_shift*i) for i in range(n_windows)])    
+            t1 = np.array([t1_min*np.exp(t1_shift*i) for i in range(n_windows)])
         else:
             raise NotImplementedError("This method is not implemented for the moment!")
-            
+
     if mode == 'auto':
         t_max = tr.index.max()     # maximum legal time value
         t1 = np.array([t1_min])
@@ -347,7 +358,7 @@ def create_t1_values (t1_min, t1_shift, n_windows = None, tr = None, multiplier 
             if method == 'exp':
                 t1 = np.append(t1, t1_min*np.exp(t1_shift*n_windows))
         t1 = t1[:-1]        # Remove the last item, which will be higher than t_max. This is due to the condition I put in the while loop.
-        
+
     return t1
 
 
@@ -407,10 +418,10 @@ def calculate_en (t1, t2, injection):
 def remove_outliers (df, window, threshold):
     '''
     Substitutes outlier points in a DataFrame with NaN values according to the following algorithm:
-    1) On each column of the DataFrame, it calculates the rolling median of the dataframe with the desired window, 
+    1) On each column of the DataFrame, it calculates the rolling median of the dataframe with the desired window,
     2) Takes the difference between the original and the rolling median,
     3) Turns into NaNs the points where the difference is bigger than the desired threshold.
-    
+
     df: DataFrame to be smoothed.\n
     window: rolling median window.\n
     threshold: threshold difference between original data and averaged data above which a point is considered outlier.
@@ -420,15 +431,15 @@ def remove_outliers (df, window, threshold):
     outlier_idx = difference < threshold    # find which points have to be kept, i.e. only those for which the differece is smaller than threshold
     filtered_df = df[outlier_idx]
     return filtered_df
-    
+
 ###################################################################################
 ######## SPECTRUM CALCULATION  ####################################################
 ###################################################################################
 
 
 
-def picts_2gates (tr, beta, t_avg, t1_min=None, t1_method='linear', 
-                  t1_shift=None, n_windows=None, t1=None, integrate = False, 
+def picts_2gates (tr, beta, t_avg, t1_min=None, t1_method='linear',
+                  t1_shift=None, n_windows=None, t1=None, integrate = False,
                   round_en = None, injection = 'high'):
     '''
     tr: dataframe with transients at different temperatures\n
@@ -465,7 +476,7 @@ def picts_2gates (tr, beta, t_avg, t1_min=None, t1_method='linear',
     # Calculate rate windows
     #en = np.log(beta)/(t1*(beta-1))
     en = calculate_en(t1 = t1, t2 = beta*t1, injection=injection)
-    # Calculate picts signal for each rate window taking the integral of the current between t1 and t2 
+    # Calculate picts signal for each rate window taking the integral of the current between t1 and t2
     if integrate:
         picts = pd.concat([tr.iloc[t1:t2].apply(lambda x: scipy.integrate.trapz(x, tr.iloc[t1:t2].index)) \
                            for t1,t2 in zip(t1_loc,t2_loc) ], axis=1)
@@ -476,13 +487,13 @@ def picts_2gates (tr, beta, t_avg, t1_min=None, t1_method='linear',
     picts = round_rate_window_values(picts, en, round_en)
     picts.columns.name = 'Rate Window (Hz)'
     gates = np.array([t1, t2]).T       # I traspose it so that each row corresponds to a rate window
-    
+
     return picts, gates
 
 
 
-def picts_4gates (tr, alpha, beta, t_avg, t1_min=None, t1_method='linear', 
-                  t1_shift=None, n_windows=None, gamma=None, t1=None, t4=None, 
+def picts_4gates (tr, alpha, beta, t_avg, t1_min=None, t1_method='linear',
+                  t1_shift=None, n_windows=None, gamma=None, t1=None, t4=None,
                   integrate = False, round_en = None):
     '''
     tr: dataframe with transients at different temperatures\n
@@ -509,7 +520,7 @@ def picts_4gates (tr, alpha, beta, t_avg, t1_min=None, t1_method='linear',
     if (alpha==beta):
         raise ValueError("alpha and beta have the same value, please set two different values for calculating the 4 gates spectrum.")
     if t1 is None:
-        if (t1_min==None or t1_shift==None or n_windows==None): 
+        if (t1_min==None or t1_shift==None or n_windows==None):
             raise ValueError("If t1 is not specified, you need to specify t1_min, t1_shift and n_windows")
         t1 = create_t1_values(t1_min, t1_shift, n_windows, method=t1_method)
     # Create t2 and t3 and t4 based on t1, alpha, beta, gamma
@@ -551,7 +562,7 @@ def picts_4gates (tr, alpha, beta, t_avg, t1_min=None, t1_method='linear',
 
 
 def picts_map (tr, t1_min, beta, t_avg, t1_shift, n_windows = None,
-               alpha=None, gamma=None, integrate = False, round_en = None, 
+               alpha=None, gamma=None, integrate = False, round_en = None,
                t1_shift_method='exp', injection = 'high', line_normalize = False):
     '''
     tr: dataframe with transients at different temperatures\n
@@ -567,19 +578,19 @@ def picts_map (tr, t1_min, beta, t_avg, t1_shift, n_windows = None,
     round_en: integer indicating how many decimals the rate windows should should be rounded to. If None, the default calculated values of en are kept.\n
     injection: can be either "high" (default) or "low", corresponding to high or low injection from the light source. The expression for finding en in the case of 2 gates PICTS is different in the 2 cases. \n
     line_normalize: Each line of the map is normalized so that the max intensity is set to 1. This can allow to see better some hidden features, but can also introduce artefacts, like horizontal and vertical lines. Always compare a normalized map with the non-normalized one.
-    
+
     Calculates the "3D Arrhenius plot", i.e. the PICTS spectrum over a large number of rate windows
     '''
-    
+
     # Determine if the user wants 4 gates or 2 gates method
     if alpha is not None and gamma is not None:
         method = '4 gates'
         multiplier = gamma       # Used to determine the max value that t1 can have so that t4 is not larger than t_max
-    else: 
+    else:
         method = '2 gates'
         multiplier = beta       # Used to determine the max value that t2 can have so that t4 is not larger than t_max
-    
-    # In case n_windows was not passed to the function, create automatically t1 gates 
+
+    # In case n_windows was not passed to the function, create automatically t1 gates
     if n_windows is None:
         t1=create_t1_values (tr = tr, t1_min = t1_min, multiplier = multiplier, t1_shift = t1_shift, method = t1_shift_method)
     # Create t1 gates in case n_windows was passed to the function
@@ -587,28 +598,28 @@ def picts_map (tr, t1_min, beta, t_avg, t1_shift, n_windows = None,
         if t1_shift is None: raise ValueError("You need to specify t1_shift if you specify n_windows")
         t1 = np.array([t1_min*np.exp(t1_shift*i) for i in range(n_windows)])
         t1 = t1[multiplier*t1<tr.index.max()]    # Make sure that t2 does not overcome the maximum time of the transient
-    
+
     # Calculate PICTS spectrum and prepare the S dataframe to be converted into a xr.DataArray
     if method == '2 gates':
         S, gates = picts_2gates(tr, t1=t1, beta=beta, t_avg=t_avg,
                                 integrate=integrate, injection = injection)
     if method == '4 gates':
-        S, gates = picts_4gates(tr, t1=t1, alpha=alpha, beta=beta, gamma=gamma, 
+        S, gates = picts_4gates(tr, t1=t1, alpha=alpha, beta=beta, gamma=gamma,
                                    t_avg=t_avg, integrate=integrate)
-        
+
     if line_normalize: S_stack = S/S.max()     # Normalize all spectra to the max so that they have the same intensity
     else: S_stack = S
     S_stack.columns = np.log(S.columns)    # Convert en to log(en) for better visualization
     S_stack.index = 1000/S_stack.index     # Convert T to 1000/T
     S_stack=S_stack.stack().swaplevel()    #stack index and swap T and en indices. Operation needed to convert it into a DataArray easily
     S_stack.index=S_stack.index.set_names(['log_en', '1000/T'])    # Rename the indices
-    
+
     # Create the xr.DataArray
     Sa = xr.DataArray.from_series(S_stack)
     Sa = Sa.sortby('log_en')
     Sa.name='Sa'                             # Set a name for the datarray, it will be needed by hvplot to produce a plotting of the data
     if round_en is not None: Sa['log_en'] = np.round(Sa['log_en'], round_en)                  # Round the log_en values. We do it here rather than when calling the picts method because those methods round the en value, not the log(en) one
-    
+
     return Sa
 
 
@@ -641,7 +652,7 @@ def gaus_fit (df, T_range, fit_window, return_Tm=False, outlier_window=None, out
         df = df[~df.index.duplicated(keep='first')]  # Delete rows with duplicates if there are any
         warnings.warn("The index of the dataframe is not monotonic, therefore the fitting function cannot work properly. I sorted the index and deleted duplicate index elements, please check that this operation is ok with your specific dataframe.",
         stacklevel=2)
-        
+
     T_min_loc = df.index.get_indexer([T_range[0]], method='pad')[0]    # Find position of Tmin and Tmax with tolerance for using iloc later
     T_max_loc = df.index.get_indexer([T_range[1]], method='backfill')[0]
     df = df.iloc[T_min_loc: T_max_loc+1]                             # Restrinct dataframe only to desidred T range
@@ -689,7 +700,7 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel, exclude_en=[], outlier_win
                 the curve maximum is located. E.g. max of a rate window is found at 200K and fit_window=10, then we just fit from 190K
                 to 210K.\n
     m_eff_rel: relative effective mass i.e. the dimensionless quantity m_eff/m_e, where m_e is the electronic mass.\n
-    exclude_en: list of int or dictionary of lists of int. The list indicates which rate windows not to consider in the gaussian fit of the peaks. Integers should be numbers from 0 to n_windows-1. 
+    exclude_en: list of int or dictionary of lists of int. The list indicates which rate windows not to consider in the gaussian fit of the peaks. Integers should be numbers from 0 to n_windows-1.
                 It can also be a dictionary where keys must be the same as the ones of T_traps
                 and the values should be lists indicating the ens to exclude for each trap.
     outlier_window: int indicating window of the rolling median to find and remove the outliers before fitting (see remove_outliers function and https://ocefpaf.github.io/python4oceanographers/blog/2015/03/16/outlier_detection/). If passed, you need to pass outlier_threshold as well. Increase this value if you have a large portion of your curves that contains outliers; if you have isolated spike you can use a low value. \n
@@ -701,7 +712,7 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel, exclude_en=[], outlier_win
     2 a dataframe with the gaussian fits of the picts spectrum for each trap
     3 a dataframe with trap parameters (Ea,sigma)
     '''
-    # If fit_window and exclude_en are not dictionaries, we create a dictionary where the values for each trap are the same as the one passed by the user 
+    # If fit_window and exclude_en are not dictionaries, we create a dictionary where the values for each trap are the same as the one passed by the user
     if isinstance(fit_window, (int,float)):
         fit_window = dict.fromkeys(T_traps.copy(),fit_window)    # Create a copy of T_traps dict so that we have the same keys, then set value equal to fit_window for all keys using dict.fromkeys()
     if isinstance(exclude_en, list):
@@ -714,7 +725,7 @@ def arrhenius_fit (S, T_traps, fit_window, m_eff_rel, exclude_en=[], outlier_win
     Tms = {}     # Dictionary that will be filled with dataframes with Tm, one for each trap
     for trap in T_traps:
         S_to_fit = S.drop(S.columns[exclude_en[trap]], axis=1)       # Before fitting, drop the columns that the user wants to exclude. I create a copy of S (S_to_fit), otherwise I loose some data on my original dataframe
-        fits[trap], Tms[trap] = gaus_fit(S_to_fit, T_range = T_traps[trap], 
+        fits[trap], Tms[trap] = gaus_fit(S_to_fit, T_range = T_traps[trap],
                                          fit_window=fit_window[trap], return_Tm=True,
                                          outlier_window=outlier_window, outlier_threshold=outlier_threshold)  # do gaussian fit of all peaks of a certain trap
     S_fit = pd.concat(fits, axis=1)                                       # multi-column dataframe with gaussian fits. First level are the traps, second level are the rate windows for each trap
@@ -768,57 +779,63 @@ def map_fit (S, T_range, log_en_range, n_points, fit_window, m_eff_rel, exclude_
     fit_window: same as for arrhenius_fit()\n\n
     m_eff_rel: relative effective mass of the material\n\n
     exclude_en = list of int or dictionary of lists of int containing the positions of the rate windows not to be considered in the fit (see arrhenius_fit for reference)
+    
+    Returns:
+    0: a dataframe with arrhenius plot data,
+    1: a dataframe with arrhenius plot fits
+    2: a dataframe with the gaussian fits of the picts spectrum for each trap
+    3: a dataframe with trap parameters (Ea,sigma)
     '''
     # If log_en_range is not a dictionary, we create a dictionary where the values for each trap are the same as the one passed by the user via T_range
     if isinstance(log_en_range, list):
-        log_en_range = dict.fromkeys(T_range.copy(),log_en_range)  
+        log_en_range = dict.fromkeys(T_range.copy(),log_en_range)
     if isinstance(n_points, int):
         n_points = dict.fromkeys(T_range.copy(),n_points)
     if isinstance(exclude_en, list):
-        exclude_en = dict.fromkeys(T_range.copy(),exclude_en) 
-    
+        exclude_en = dict.fromkeys(T_range.copy(),exclude_en)
+
     arrs = {}    # list of arrhenius fits
     en_min_spacing = np.diff(S.coords['log_en'].values)[1]     # Minimum spacing that can be achieved given the en resolution of the array
     for trap in T_range:
         en_spacing = (log_en_range[trap][1]-log_en_range[trap][0]) / n_points[trap]          # spacing between two consecutive en_values, given the resolution requested by the user
-        if en_spacing<en_min_spacing: raise ValueError("There is not enough resolution on the log_en axis. Decrease the n_points or generate a map with smaller en steps by decreasing t1_shift")    
+        if en_spacing<en_min_spacing: raise ValueError("There is not enough resolution on the log_en axis. Decrease the n_points or generate a map with smaller en steps by decreasing t1_shift")
         en_values = np.arange(log_en_range[trap][0], log_en_range[trap][1], en_spacing)  # en values corresponding to the horizontal profiles to be extracted from the array for fitting
         # Create the subset of the big array with the profiles to be fitted and convert it to pd.DataFrame since this is what arrhenius_fit() needs.
-        s = S.sel(log_en = en_values, method='bfill').to_dataframe().unstack().T.droplevel(0)   
+        s = S.sel(log_en = en_values, method='bfill').to_dataframe().unstack().T.droplevel(0)
         # We exclude the rate windows here instead of inside arrhenius_fit because in this way we can keep track of the un-fitted columns, which are added back as nan columns a few lines below
         s.index = 1000/s.index          # arrhenius fit works with T values
         s = s.sort_index()              # sort index to avoid errors during arrhenius fitting
         if exclude_en is not None: s_to_fit = s.drop(exclude_en[trap], axis=1)
         else: s_to_fit = s.copy()
         log_en_values = s_to_fit.columns                    # Save the log(en) values as in the next line we switch to en and later we want to go back to log(en). Note, doing again log on the columns to go back to log(en) can create problems with some rate window values. E.g. log(exp(0.637))=0.636999999, which then gives problems in the code.
-        s_to_fit.columns = np.exp(s_to_fit.columns.values)   # arrhenius fit works with en values      
+        s_to_fit.columns = np.exp(s_to_fit.columns.values)   # arrhenius fit works with en values
         try:
             # Arrhenius fit
             arr = arrhenius_fit(s_to_fit, T_traps= {trap: T_range[trap]},
                                 fit_window = fit_window,
-                                m_eff_rel = m_eff_rel, 
+                                m_eff_rel = m_eff_rel,
                                 outlier_window=outlier_window, outlier_threshold=outlier_threshold
                          )
-        except RuntimeError: 
+        except RuntimeError:
             print("The gaussian fitting of the peaks failed for trap %s. These are the input spectra and the temperature range values for this trap as vertical blue lines:\n" % (trap,))
             plt.plot(s_to_fit)
             plt.axvline(x=T_range[trap][0], c='b', linestyle='--')
             plt.axvline(x=T_range[trap][1], c='b', linestyle='--')
             plt.show()
             raise ValueError("The gaussian fitting failed.")
-        
+
         # Adjust the s_fit output
         s_fit = arr[2]
         s_fit.columns = s_fit.columns.set_levels(log_en_values, level=1) # Go back to log(en)
         # Add back the un-fitted columns so that when we call plot_all we can also see which columns were not fitted
         missing_en = list(set(s.columns)-set(s_fit[trap].columns))
-        
-        # Add the missing rate windows as nan columns. 
-        # However, it can happen that the operation of transforming in exp and then back to log does not yield the same rate window. Un example is np.log(np.exp(0.637))=0.63699999... 
-        # Therefore we check that the missing en is not very close to one of the existing ones(difference<1e-10), in which case we 
+
+        # Add the missing rate windows as nan columns.
+        # However, it can happen that the operation of transforming in exp and then back to log does not yield the same rate window. Un example is np.log(np.exp(0.637))=0.63699999...
+        # Therefore we check that the missing en is not very close to one of the existing ones(difference<1e-10), in which case we
         cols = s_fit.columns.levels[1]
-        for en in missing_en: s_fit.loc[:,(trap,en)]=np.nan    
-        
+        for en in missing_en: s_fit.loc[:,(trap,en)]=np.nan
+
         s_fit.sort_index(axis=1, inplace=True)    # Sort column index so to have all rate windows in ascending order, as the excluded ones are added at the end of the df, not in order
 
         # Update the dictionary with all arrhenius outputs for each trap
@@ -849,10 +866,10 @@ def plot_transients (tr, gates = None, cmap=None, **hvplot_opts):
                 ylabel = 'Current (A)', color = 'k')
     # Overwrite or add the user specified options to the otpions used to produce the plot
     for opt in hvplot_opts: opts[opt] = hvplot_opts[opt]
-    
+
     # Overlay rate window visualization if specified
     if gates is not None:
-        
+
         # Define colormap
         if cmap is None: colormap = hv.Cycle.default_cycles["default_colors"]
         else: colormap = cm(gates.shape[0], cmap)
@@ -860,17 +877,17 @@ def plot_transients (tr, gates = None, cmap=None, **hvplot_opts):
         # Vertical lines corresponding to gate positions
         lines = hv.Overlay([hv.Overlay([hv.VLine(x=ti).opts(color=colormap[i]) for ti in t]) \
                             for i,t in enumerate(gates)])
-            
+
         # Return a pn.interact where the function is a lambda that returns an Overlay of tr and VLines and the variable is Temperature
         return pn.interact(lambda Temperature: tr[Temperature].hvplot(**opts)*lines,
                            Temperature=list((tr.columns)))
-    else: 
+    else:
         return pn.interact(lambda Temperature: tr[Temperature].hvplot(**opts),
                            Temperature=list((tr.columns)))
 
 
-    
-    
+
+
 def plot_arrhenius(arr, arr_fit=None, suffix='', drop=None, show_fit=True, **hvplot_opts):
     '''
     Plots the arrhenius data with the correct x and y labels
@@ -889,7 +906,7 @@ def plot_arrhenius(arr, arr_fit=None, suffix='', drop=None, show_fit=True, **hvp
     # Overright or add options, if needed
     for key, value in hvplot_opts.items(): opts[key]=value
     # Drop unwanted traps, so that they won't be plotted
-    if drop is not None: 
+    if drop is not None:
         arr = arr.drop(columns=drop).dropna(how='all')
         arr_fit = arr_fit.drop(columns=drop).dropna(how='all')
     if suffix!= '':
@@ -908,18 +925,18 @@ def plot_arrhenius(arr, arr_fit=None, suffix='', drop=None, show_fit=True, **hvp
 
 
 def plot_map (S, interact=False, **hvplot_opts):
-    
+
     '''
     S: xr.DataArray returned by picts_map(), with 1000/T and log_en as coords and PICTS signal as values.\n\n
-    interact: whether to display also a graph with horizontal map profile that updates when the mouse moves on the map. \n\n 
+    interact: whether to display also a graph with horizontal map profile that updates when the mouse moves on the map. \n\n
     hvplot_opts: map plotting options to be passed to the hvplot constructor
     '''
-    
-    opts = dict(cmap='turbo', rasterize=True, width=400, 
+
+    opts = dict(cmap='turbo', rasterize=True, width=400,
                 ylabel = 'ln(en)', xlabel='1000/T (K^-1)')
     # Update the default opts if the user has specified different ones
     opts.update(hvplot_opts)
-    
+
     if interact:
         qmesh = S.hvplot.quadmesh(dynamic=False, **opts)   # Create 3D plot
         # Create a copy dataarray with T coord instead of 1000/T and create a new 3D plot based on this
@@ -930,11 +947,11 @@ def plot_map (S, interact=False, **hvplot_opts):
         qmesh_T=S_T.hvplot.quadmesh(dynamic=False, **opts)
 
         # Define pointer that tracks the mouse position over the qmesh map
-        pointer = streams.PointerXY(x=S.coords['1000/T'].values.min(), 
+        pointer = streams.PointerXY(x=S.coords['1000/T'].values.min(),
                             y=S.coords['log_en'].values.min(),
                             source=qmesh)
         # Define the horizontal profile plot and link it to the pointer
-        y_sample = hv.DynamicMap(lambda x, y: qmesh_T.apply.sample(log_en=y), 
+        y_sample = hv.DynamicMap(lambda x, y: qmesh_T.apply.sample(log_en=y),
                                  streams=[pointer])
         # Options for y_sample plot
         y_sample_opts = dict(height=300, width=400, tools=['hover'],
@@ -943,7 +960,7 @@ def plot_map (S, interact=False, **hvplot_opts):
         out = qmesh + y_sample.opts(**y_sample_opts)
     else:
         out = S.hvplot.quadmesh(**opts)
-    
+
     return out
 
 
@@ -963,31 +980,31 @@ def plot_all(picts, arrhenius=None, tr=None, show_arrhenius=True, **S_plot_opts)
     tr_opts = dict(width=400,height=300,
                    xlim=[0,None])
     arr_opts = dict(height=350, width=250, legend=False)
-    
+
     if arrhenius is None:
         show_arrhenius=False
     else:  # Get all components from arrhenius data
         arr, arr_fit, S_fit, trap_params = arrhenius
-        
+
     # Get spectrum and gates from picts data
-    if isinstance(picts, tuple):    # tuple object returned by picts_2gates/picts_4gates             
-        S = picts[0]   
+    if isinstance(picts, tuple):    # tuple object returned by picts_2gates/picts_4gates
+        S = picts[0]
         gates = picts[1]
     elif isinstance(picts, xr.DataArray):     # If it's a 3D Arrhenius map returned by picts_map
         if show_arrhenius == False:
-            return plot_map(picts)        
+            return plot_map(picts)
         else:
             # Select from the map only the fitted profiles, based on the column names of the arrhenius fit dataframe
             S = picts.sel(log_en=S_fit.columns.levels[1], method='ffill').to_dataframe().unstack(0).droplevel(0,axis=1)
             S.index = 1000/S.index     # Change the index to 1000/T
             S.index.name = 'Temperature (K)'
     else: S = picts                # Case of simple dataframe with picts spectra
-    
-    ### LEFT COLUMN ###    
+
+    ### LEFT COLUMN ###
     # Create the spectrum plot and put it in a column that will be on the left of the final panel
-    if show_arrhenius==False: 
+    if show_arrhenius==False:
         plot_S = S.hvplot(**S_opts)    # Show lines if the gauss fit is not overlayed
-    else: 
+    else:
         ## If the user used exclude_en there will be some en_values missing and calling S_fit[en] below will fail. We want the plot to show no fit if the specified en was excluded, so we want to add new NaN columns for these ens
         ## The other case when we want to do this is when more than 1 traps are present and the two traps are not fitted on the same en values. In that case S_fit.columns will be bigger than S_fit.columns.levels[0]
         if len(S.columns) != len(S_fit.columns.levels[1]) or len(S_fit.columns) > len(S_fit.columns.levels[0]):
@@ -997,30 +1014,30 @@ def plot_all(picts, arrhenius=None, tr=None, show_arrhenius=True, **S_plot_opts)
         # Define plot color for each trap so that they are easily distinguishable when plotting
         cmap = [c for c in mcolors.TABLEAU_COLORS.values()]
         #cmap.pop('tab:red')             # Remove red color which is the same as for the linear fit
-        gaus_fit_colors = {trap: cmap[i] for i, trap in enumerate(S_fit.columns.levels[0])} 
-        plot_S = pn.interact(lambda ln_en: hv.Overlay(S[ln_en].hvplot(kind='scatter', size=1, 
+        gaus_fit_colors = {trap: cmap[i] for i, trap in enumerate(S_fit.columns.levels[0])}
+        plot_S = pn.interact(lambda ln_en: hv.Overlay(S[ln_en].hvplot(kind='scatter', size=1,
                                                                 title='ln(en) = ' + str(ln_en) + '    en = '+str(np.round(np.exp(ln_en),3))+' Hz',
                                                                 **S_opts)*\
                                                    hv.Overlay([S_fit[trap][ln_en].hvplot(color=gaus_fit_colors[trap],**S_fit_opts) for trap in arr.columns])),
                              ln_en = S.columns
                             )
     left_col = pn.Column(plot_S)
-    
+
     # If the transients are provided, create the plot and append it to the left column
     if tr is not None:
         plot_tr = plot_transients(tr,gates=gates, **tr_opts)
-        left_col.append(plot_tr)    
-    
+        left_col.append(plot_tr)
+
     panel = pn.Row(left_col)
-    
-    ### RIGHT COLUMN ###    
+
+    ### RIGHT COLUMN ###
     if arrhenius is not None and show_arrhenius==True:
-        plot_arr = hv.Layout([plot_arrhenius(arr[trap].dropna(), arr_fit[trap].dropna(), 
+        plot_arr = hv.Layout([plot_arrhenius(arr[trap].dropna(), arr_fit[trap].dropna(),
                                              title=trap, color=gaus_fit_colors[trap], **arr_opts)\
                               .opts(show_legend=False, axiswise=True) \
                               for trap in arr])
-        
+
         right_col= pn.Column(plot_arr, trap_params.interactive())
         panel.append(right_col)
-    
+
     return panel
