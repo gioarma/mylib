@@ -187,7 +187,6 @@ def save_arrhenius (arr, sample_name, path = '',
     df = pd.concat([arr_all, fit_all], axis=1)
     df = df.join(trap_params_all)
     #df = df.drop('1000/T (K⁻¹) fit', axis=1)      # drop 1000/T fit, which is the same as 1000/T
-    print(df)
     # Change formatting of some column names so that it's easier to work on the dataframe later
     df = df.rename(columns = {
         'Eₐ (eV)': 'Ea (eV)',
